@@ -4,6 +4,20 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/), Ve
 
 ## [Unreleased]
 
+### Hinzugefügt (M3: Sicherheit & Zustellbarkeit)
+- DKIM-Schlüsselerzeugung (RSA-2048 über `rsa`-Crate), private Schlüssel ausschließlich AES-256-GCM-verschlüsselt gespeichert (`HAVENMAIL_SECRETS_KEY`)
+- DNS-Prüfung (MX, SPF, DKIM, DMARC) über `hickory-resolver` mit Ergebnis-Historie in `dns_checks`
+- DNS-Empfehlungsendpunkt liefert kopierfertige Einträge inkl. echtem DKIM-Wert nach Schlüsselerzeugung
+- Neue API-Routen: `POST /domains/:id/dkim`, `GET /domains/:id/dns-recommendations`, `POST /domains/:id/dns-check`
+- In-Process-Rate-Limiting für `/auth/login` (5 Versuche/15 Minuten je Client-IP, ermittelt über `X-Forwarded-For`)
+- Fail2ban-Jail-Templates für Postfix-SASL und Dovecot (`config/fail2ban/`)
+- 5 neue Unit-/Integrationstests (DKIM-Roundtrip, DNS-Empfehlungen, Rate-Limiter, Client-IP-Extraktion)
+
+### Bekannt / Noch ausstehend (nach M3)
+- MTA-STS/TLS-RPT-Policy-Hosting und ARC noch nicht umgesetzt
+- DANE/DNSSEC-Unterstützung noch nicht umgesetzt
+- Fail2ban-Templates sind Konfigurationsvorlagen; Installation/Aktivierung von fail2ban folgt mit dem Installer (M5)
+
 ### Hinzugefügt (M2: Domain-/Benutzerverwaltung + REST-API + CLI)
 - REST-Admin-API (`/api/v1/...`): Login/Refresh/Logout (rotierende Refresh-Tokens), Domains (CRUD, super_admin-/domain_admin-Scope), Benutzer, Aliase, Verteiler, Weiterleitungen
 - Weiterleitungen mit Loop-Schutz: verfolgt die Zielkette bis 25 Hops und lehnt Weiterleitungen ab, die eine Mail-Schleife erzeugen würden, sowie Weiterleitungen auf die eigene Adresse

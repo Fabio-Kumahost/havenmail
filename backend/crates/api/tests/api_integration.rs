@@ -33,6 +33,9 @@ async fn setup() -> Option<(Router, PgPool)> {
     let state = AppState {
         db: db.clone(),
         jwt: Arc::new(JwtIssuer::new(b"test-signing-key-at-least-32-bytes!")),
+        secrets_key: Arc::new(vec![3u8; 32]),
+        mail_hostname: Arc::new("mail.havenmail-test.invalid".to_string()),
+        login_rate_limiter: Arc::default(),
     };
     Some((havenmail_api::build_router(state), db))
 }
@@ -295,4 +298,68 @@ async fn forward_loop_is_rejected() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn dkim_generation_updates_dns_recommendations() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (super_email, super_password) = bootstrap_super_admin(&db).await;
+    let super_token = login(&app, &super_email, &super_password).await;
+
+    let domain_name = format!("dkim-{}.test", Uuid::new_v4());
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": domain_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let domain_id = body["id"].as_str().unwrap().to_string();
+
+    // Vor der Schlüsselerzeugung: Empfehlung ohne DKIM-Eintrag.
+    let (status, body) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/domains/{domain_id}/dns-recommendations"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["dkim"].is_null());
+    assert!(body["spf"]["value"].as_str().unwrap().contains("v=spf1"));
+
+    let (status, body) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_id}/dkim"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    assert!(body["dns_record_value"]
+        .as_str()
+        .unwrap()
+        .starts_with("v=DKIM1"));
+
+    // Nach der Schlüsselerzeugung: Empfehlung enthält den echten DKIM-Eintrag.
+    let (status, body) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/domains/{domain_id}/dns-recommendations"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["dkim"]["value"]
+        .as_str()
+        .unwrap()
+        .starts_with("v=DKIM1"));
 }

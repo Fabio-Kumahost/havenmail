@@ -1,9 +1,9 @@
 //! Havenmail Control-Plane API — Binary-Einstiegspunkt.
 //!
-//! STATUS (M2): REST-Admin-API für Domains, Benutzer, Aliase, Verteiler und
-//! Weiterleitungen (inkl. Loop-Schutz) sowie JWT-Login/Refresh/Logout.
-//! Erfordert `DATABASE_URL` und `HAVENMAIL_JWT_SIGNING_KEY` (mind. 32 Byte)
-//! als Umgebungsvariablen. Siehe docs/architecture.md im Repo-Root.
+//! STATUS (M3): + DKIM-Schlüsselerzeugung, DNS-Prüfung/-Empfehlungen.
+//! Erfordert `DATABASE_URL`, `HAVENMAIL_JWT_SIGNING_KEY` (mind. 32 Byte),
+//! `HAVENMAIL_SECRETS_KEY` (genau 32 Byte) und `HAVENMAIL_HOSTNAME` als
+//! Umgebungsvariablen. Siehe docs/architecture.md im Repo-Root.
 
 use havenmail_api::state::AppState;
 use havenmail_core::auth::jwt::JwtIssuer;
@@ -21,6 +21,13 @@ async fn main() {
     if signing_key.len() < 32 {
         panic!("HAVENMAIL_JWT_SIGNING_KEY muss mindestens 32 Byte lang sein");
     }
+    let secrets_key = std::env::var("HAVENMAIL_SECRETS_KEY")
+        .expect("HAVENMAIL_SECRETS_KEY muss gesetzt sein (siehe .env.example)");
+    if secrets_key.len() != 32 {
+        panic!("HAVENMAIL_SECRETS_KEY muss genau 32 Byte lang sein");
+    }
+    let mail_hostname = std::env::var("HAVENMAIL_HOSTNAME")
+        .expect("HAVENMAIL_HOSTNAME muss gesetzt sein (siehe .env.example)");
 
     let db = havenmail_core::db::connect(&database_url)
         .await
@@ -33,6 +40,9 @@ async fn main() {
     let state = AppState {
         db,
         jwt: Arc::new(JwtIssuer::new(signing_key.as_bytes())),
+        secrets_key: Arc::new(secrets_key.into_bytes()),
+        mail_hostname: Arc::new(mail_hostname),
+        login_rate_limiter: Arc::default(),
     };
 
     let app = havenmail_api::build_router(state);

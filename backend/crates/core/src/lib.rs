@@ -9,6 +9,8 @@ pub mod audit;
 pub mod auth;
 pub mod config_render;
 pub mod db;
+pub mod dkim;
+pub mod dns_check;
 pub mod rbac;
 
 pub use rbac::{Action, Actor, Role};

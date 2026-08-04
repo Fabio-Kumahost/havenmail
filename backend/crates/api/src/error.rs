@@ -20,6 +20,8 @@ pub enum ApiError {
     BadRequest(String),
     #[error("Konflikt: {0}")]
     Conflict(String),
+    #[error("zu viele fehlgeschlagene Anmeldeversuche — bitte später erneut versuchen")]
+    TooManyRequests,
     #[error("interner Fehler")]
     Internal(#[from] sqlx::Error),
     #[error("interner Fehler (Token)")]
@@ -34,6 +36,7 @@ impl IntoResponse for ApiError {
             ApiError::NotFound => (StatusCode::NOT_FOUND, self.to_string()),
             ApiError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             ApiError::Conflict(_) => (StatusCode::CONFLICT, self.to_string()),
+            ApiError::TooManyRequests => (StatusCode::TOO_MANY_REQUESTS, self.to_string()),
             ApiError::Internal(err) => {
                 tracing::error!(%err, "interner Fehler");
                 (

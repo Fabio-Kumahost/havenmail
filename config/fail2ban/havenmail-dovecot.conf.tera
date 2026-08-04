@@ -1,0 +1,10 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+# Fail2ban-Jail für Dovecot (fehlgeschlagene IMAP-/ManageSieve-Logins).
+[dovecot]
+enabled = true
+port = imap,imaps,4190
+filter = dovecot
+logpath = /var/log/mail.log
+maxretry = 5
+findtime = 15m
+bantime = 1h

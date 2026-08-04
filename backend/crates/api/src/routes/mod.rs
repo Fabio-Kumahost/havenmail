@@ -1,6 +1,7 @@
 pub mod aliases;
 pub mod auth;
 pub mod distribution_lists;
+pub mod dns;
 pub mod domains;
 pub mod forwards;
 pub mod users;
@@ -57,5 +58,17 @@ pub fn router() -> Router<AppState> {
         .route(
             "/api/v1/forwards/:forward_id",
             delete(forwards::delete_forward),
+        )
+        .route(
+            "/api/v1/domains/:domain_id/dkim",
+            post(dns::generate_dkim_key),
+        )
+        .route(
+            "/api/v1/domains/:domain_id/dns-recommendations",
+            get(dns::dns_recommendations),
+        )
+        .route(
+            "/api/v1/domains/:domain_id/dns-check",
+            post(dns::run_dns_check),
         )
 }

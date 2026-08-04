@@ -1,0 +1,11 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+# Fail2ban-Jail für Postfix (SASL-Auth-Fehler bei Submission/SMTPS).
+# Nutzt fail2bans mitgelieferte Standardfilter (keine Eigenimplementierung).
+[postfix-sasl]
+enabled = true
+port = smtp,465,submission
+filter = postfix-sasl
+logpath = /var/log/mail.log
+maxretry = 5
+findtime = 15m
+bantime = 1h

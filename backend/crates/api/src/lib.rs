@@ -5,7 +5,9 @@
 //! einzelne Handler isoliert zu testen.
 
 pub mod auth_extractor;
+pub mod client_ip;
 pub mod error;
+pub mod rate_limit;
 pub mod routes;
 pub mod state;
 

@@ -2,9 +2,10 @@
 //! bei Login), da hier die Authentifizierung erst stattfindet.
 
 use crate::auth_extractor::AuthUser;
+use crate::client_ip;
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
-use axum::{extract::State, Json};
+use axum::{extract::State, http::HeaderMap, Json};
 use havenmail_core::auth::{jwt::ACCESS_TOKEN_TTL_SECONDS, password, token};
 use havenmail_core::rbac::Role;
 use serde::{Deserialize, Serialize};
@@ -48,8 +49,14 @@ fn dummy_hash() -> String {
 
 pub async fn login(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<LoginRequest>,
 ) -> ApiResult<Json<TokenResponse>> {
+    let ip = client_ip::extract(&headers);
+    if state.login_rate_limiter.is_blocked(ip) {
+        return Err(ApiError::TooManyRequests);
+    }
+
     let row: Option<UserAuthRow> = sqlx::query_as(
         r#"
         SELECT u.id, u.password_hash, u.role::text as role, u.domain_id, u.is_active
@@ -81,8 +88,10 @@ pub async fn login(
 
     let password_ok = password::verify_password(&req.password, &stored_hash);
     if row.is_none() || !is_active || !password_ok {
+        state.login_rate_limiter.record_failure(ip);
         return Err(ApiError::Unauthorized);
     }
+    state.login_rate_limiter.record_success(ip);
 
     let role = parse_role(&role);
     issue_token_pair(&state, user_id, role, domain_id).await
