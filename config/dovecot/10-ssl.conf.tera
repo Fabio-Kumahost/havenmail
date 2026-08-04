@@ -1,0 +1,7 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+ssl = required
+ssl_cert = <{{ tls_cert_path }}
+ssl_key = <{{ tls_key_path }}
+ssl_min_protocol = TLSv1.2
+ssl_cipher_list = HIGH:!aNULL:!MD5:!3DES
+ssl_prefer_server_ciphers = yes

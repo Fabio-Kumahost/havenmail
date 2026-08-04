@@ -1,0 +1,12 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+# Rate-Limiting gegen Spam-/Brute-Force-Abuse über authentifizierte
+# Submission-Accounts (siehe docs/architecture.md, Bedrohungsanalyse).
+rates {
+  user_per_hour {
+    bucket {
+      burst = 100;
+      rate = "100 / 1h";
+    }
+    keys = ["user"];
+  }
+}

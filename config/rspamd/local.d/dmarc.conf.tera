@@ -1,0 +1,11 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+# DMARC-Auswertung eingehender Mail (SPF/DKIM-Alignment). Die DMARC-Policy
+# der eigenen Domains selbst wird per DNS-TXT-Eintrag gesetzt, siehe
+# docs/dns-setup.md — dieser Block betrifft nur die serverseitige Prüfung.
+actions {
+    quarantine = 0.0; # Symbol-Gewichtung, kein automatisches Quarantine per Default
+    reject = false;
+}
+reporting {
+    enabled = false; # Aggregate-Reports (rua) folgen mit M3
+}

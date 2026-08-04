@@ -1,0 +1,5 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+mail_location = maildir:/var/mail/havenmail/%d/%n
+mail_privileged_group = mail
+first_valid_uid = 5000
+first_valid_gid = 5000

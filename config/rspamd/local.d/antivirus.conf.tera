@@ -1,0 +1,13 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+# Anbindung von ClamAV über dessen Milter/ClamD-Socket. Rspamd übernimmt
+# die Auswertung des Scan-Ergebnisses; die eigentliche Virenprüfung erfolgt
+# vollständig in ClamAV (keine Havenmail-Eigenimplementierung).
+clamav {
+  action = "reject";
+  symbol = "CLAM_VIRUS";
+  type = "clamav";
+  servers = "/var/run/clamav/clamd.ctl";
+  patterns {
+    EICAR = "^Eicar-Test-Signature$";
+  }
+}

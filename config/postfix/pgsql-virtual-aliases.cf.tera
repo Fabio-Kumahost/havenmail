@@ -1,0 +1,8 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+# Postfix virtual_alias_maps: fragt die View postfix_virtual_aliases ab
+# (Aliase, Verteiler und Catch-all — siehe backend/migrations/0002_mail_lookup_views.sql).
+hosts = {{ db_host }}:{{ db_port }}
+user = {{ db_user }}
+password = {{ db_password }}
+dbname = {{ db_name }}
+query = SELECT destination FROM postfix_virtual_aliases WHERE source_address='%s'

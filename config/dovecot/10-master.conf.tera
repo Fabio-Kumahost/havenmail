@@ -1,0 +1,28 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+# IMAP (STARTTLS auf 143, implizites TLS auf 993), ManageSieve nur
+# auf localhost (siehe docs/architecture.md, Portübersicht).
+
+service imap-login {
+  inet_listener imap {
+    port = 143
+  }
+  inet_listener imaps {
+    port = 993
+    ssl = yes
+  }
+}
+
+service managesieve-login {
+  inet_listener sieve {
+    address = 127.0.0.1
+    port = 4190
+  }
+}
+
+service auth {
+  unix_listener /var/spool/postfix/private/auth {
+    mode = 0660
+    user = postfix
+    group = postfix
+  }
+}

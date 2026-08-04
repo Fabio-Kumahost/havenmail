@@ -1,0 +1,24 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+# Dovecot SASL-/IMAP-Login-Authentifizierung gegen die View
+# dovecot_auth_users (siehe backend/migrations/0002_mail_lookup_views.sql).
+# Dovecot prüft das Argon2id-Passwort selbst (eingebautes ARGON2ID-Scheme) —
+# keine Eigenimplementierung der Passwortprüfung.
+
+driver = pgsql
+connect = host={{ db_host }} port={{ db_port }} dbname={{ db_name }} user={{ db_user }} password={{ db_password }}
+default_pass_scheme = ARGON2ID
+
+password_query = \
+  SELECT username AS user, password \
+  FROM dovecot_auth_users \
+  WHERE username = '%u' AND active = true
+
+user_query = \
+  SELECT '/var/mail/havenmail/%d/%n' AS home, \
+         'maildir:/var/mail/havenmail/%d/%n' AS mail, \
+         5000 AS uid, 5000 AS gid, \
+         quota_bytes AS quota_rule \
+  FROM dovecot_auth_users \
+  WHERE username = '%u' AND active = true
+
+iterate_query = SELECT username AS user FROM dovecot_auth_users WHERE active = true

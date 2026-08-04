@@ -1,0 +1,8 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+# Postfix virtual_mailbox_domains: fragt die View postfix_virtual_domains ab
+# (siehe backend/migrations/0002_mail_lookup_views.sql).
+hosts = {{ db_host }}:{{ db_port }}
+user = {{ db_user }}
+password = {{ db_password }}
+dbname = {{ db_name }}
+query = SELECT name FROM postfix_virtual_domains WHERE name='%s'

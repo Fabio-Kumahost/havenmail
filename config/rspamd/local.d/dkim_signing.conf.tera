@@ -1,0 +1,18 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+# DKIM-Signierung pro Domain über den in der DB verwalteten privaten
+# Schlüssel (dkim_keys.private_key_enc, entschlüsselt vom Installer/der
+# Control-Plane nach /etc/havenmail/dkim/<domain>/<selector>.pem geschrieben).
+# Rspamd übernimmt die eigentliche kryptografische Signierung — keine
+# Havenmail-Eigenimplementierung von DKIM.
+
+enabled = true;
+sign_authenticated = true;
+sign_local = true;
+use_domain = "header";
+
+selector_map = "/etc/havenmail/dkim/selectors.map";
+path_map = "/etc/havenmail/dkim/keys.map";
+
+# Beispiel für die Struktur der generierten Maps (vom Installer/der
+# Control-Plane geschrieben, hier nur zur Dokumentation der Ziel-Domain):
+# {{ mail_hostname }} -> havenmail /etc/havenmail/dkim/<domain>/havenmail.pem

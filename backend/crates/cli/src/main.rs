@@ -6,7 +6,11 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "havenmail-cli", version, about = "Havenmail Administrations-CLI")]
+#[command(
+    name = "havenmail-cli",
+    version,
+    about = "Havenmail Administrations-CLI"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
