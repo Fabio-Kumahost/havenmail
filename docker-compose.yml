@@ -1,0 +1,73 @@
+# Havenmail — Docker-Compose-Variante (dokumentierte Alternative zur nativen
+# systemd-Installation, siehe docs/architecture.md).
+#
+# STATUS (M0): Gerüst. Die Postfix/Dovecot/Rspamd/ClamAV-Images und die
+# Control-Plane-/Frontend-Dockerfiles existieren noch nicht (folgt in M1/M5).
+# `docker compose up` ist bis dahin nicht funktionsfähig.
+#
+# Prinzipien für die spätere Implementierung:
+# - keine `latest`-Tags, alle Versionen gepinnt
+# - keine unnötig privilegierten Container
+# - Mail-Ports (25/587/465/143/993) benötigen entweder host-Networking oder
+#   explizites Portmapping mit korrekt weitergereichter Client-IP (kein NAT
+#   ohne PROXY-Protocol/Transparent-Proxy für RBL-Checks)
+
+services:
+  postgres:
+    image: postgres:16.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-havenmail}
+      POSTGRES_USER: ${POSTGRES_USER:-havenmail}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - havenmail_pgdata:/var/lib/postgresql/data
+    networks:
+      - internal
+    security_opt:
+      - no-new-privileges:true
+
+  control-plane:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      - internal
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+
+  web-ui:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - control-plane
+    networks:
+      - internal
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+
+  # postfix, dovecot, rspamd, clamav: folgen mit M1, sobald die
+  # Konfigurationstemplates (config/) und das Config-Rendering der
+  # Control-Plane feststehen.
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  havenmail_pgdata:
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password.txt # NICHT ins Repo committen

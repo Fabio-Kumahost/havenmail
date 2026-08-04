@@ -1,0 +1,53 @@
+# Havenmail
+
+Havenmail ist eine eigenständig entwickelte, quelloffene Mailserver-Plattform für Debian 12/13. Sie orchestriert bewährte, aktiv gepflegte Mail-Engines (Postfix, Dovecot, Rspamd, ClamAV) über eine selbst entwickelte Control-Plane (Rust) mit REST-Admin-API und moderner Web-Oberfläche (React/TypeScript).
+
+> **Projektstatus: früher Aufbau (M0).** Havenmail befindet sich in aktiver Entwicklung und ist **noch nicht produktionsreif**. Der aktuelle Stand liefert das Repository-Grundgerüst (Build-Tooling, Workspace-Skeleton, CI). Funktionsumfang gemäß [Architekturplan](docs/architecture.md) wird schrittweise in den Meilensteinen M1–M6 umgesetzt. Verwende Havenmail derzeit **nicht** für produktiven Mailbetrieb.
+
+## Warum Havenmail
+
+Havenmail schreibt keine eigene SMTP-, IMAP-, JMAP-, TLS- oder DKIM-Implementierung. Stattdessen konfiguriert und orchestriert es etablierte, battle-tested Engines:
+
+- **Postfix** – SMTP, Submission (587), SMTPS (465)
+- **Dovecot** – IMAP4rev1, JMAP, ManageSieve
+- **Rspamd** – Spam-Filter, DKIM-Signierung/-Prüfung, SPF, DMARC
+- **ClamAV** – Virenprüfung
+- **acme.sh/certbot** – automatisierte TLS-Zertifikate
+
+Eigenständig entwickelt sind: Datenmodell, Domain-/Benutzerverwaltung, REST-API, CLI, Backup/Restore, DNS-Assistent, Installer und die komplette Web-Oberfläche.
+
+Details zu Architektur, Bedrohungsmodell, Datenmodell und Meilensteinen: siehe [docs/architecture.md](docs/architecture.md).
+
+## Installation (Zielbild — noch nicht verfügbar)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/USERNAME/havenmail/main/install.sh | sudo bash
+```
+
+Sicherere, empfohlene Variante — Skript vorher prüfen:
+
+```bash
+curl -fsSLo install.sh https://raw.githubusercontent.com/USERNAME/havenmail/main/install.sh
+less install.sh
+sudo bash install.sh
+```
+
+Der Installer existiert aktuell nur als dokumentiertes Gerüst (`install.sh`) und führt noch keine vollständige Installation durch — siehe [docs/installation.md](docs/installation.md) für den aktuellen Stand.
+
+## Repository-Struktur
+
+```
+backend/    Rust Control-Plane (API, Datenmodell, Orchestrierung, CLI)
+frontend/   React/TypeScript Admin-Oberfläche
+config/     Konfigurationstemplates für Postfix/Dovecot/Rspamd/nginx
+scripts/    Provisioning- und Preflight-Hilfsskripte
+docs/       Architektur-, Betriebs- und Sicherheitsdokumentation
+```
+
+## Lizenz
+
+AGPL-3.0-or-later, siehe [LICENSE](LICENSE).
+
+## Sicherheit
+
+Verantwortungsvolle Offenlegung von Schwachstellen: siehe [SECURITY.md](SECURITY.md).

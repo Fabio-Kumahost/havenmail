@@ -1,0 +1,17 @@
+# Backend (Rust)
+/backend/target/
+
+# Frontend (Node)
+/frontend/node_modules/
+/frontend/dist/
+
+# Umgebungs- und Geheimnisdateien
+.env
+secrets/
+*.pem
+*.key
+
+# Editor/OS
+.DS_Store
+.idea/
+.vscode/
