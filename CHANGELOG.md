@@ -4,6 +4,18 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/), Ve
 
 ## [Unreleased]
 
+### Hinzugefügt (M2: Domain-/Benutzerverwaltung + REST-API + CLI)
+- REST-Admin-API (`/api/v1/...`): Login/Refresh/Logout (rotierende Refresh-Tokens), Domains (CRUD, super_admin-/domain_admin-Scope), Benutzer, Aliase, Verteiler, Weiterleitungen
+- Weiterleitungen mit Loop-Schutz: verfolgt die Zielkette bis 25 Hops und lehnt Weiterleitungen ab, die eine Mail-Schleife erzeugen würden, sowie Weiterleitungen auf die eigene Adresse
+- RBAC serverseitig durchgesetzt: domain_admin sieht/verwaltet nur die eigene Domain, kann keine super_admin-Konten anlegen; Fehlermeldungen für fremde Ressourcen wie "nicht gefunden" statt "keine Berechtigung" (Schutz vor Enumeration)
+- CLI (`havenmail-cli`) spricht die REST-API an: `login`, `domain-create`, `domain-list`, `user-create`, `user-list`, `status`; Zugangstoken lokal unter `~/.config/havenmail/credentials.json` (0600)
+- Integrationstests gegen echte PostgreSQL-Instanz: Login-Timing-Konsistenz, Domain-Scope-Isolation, Rechteausweitungsschutz, Loop-Schutz
+
+### Bekannt / Noch ausstehend (nach M2)
+- Kein Bootstrap-Mechanismus für den allerersten super_admin außer direktem DB-Zugriff (folgt mit dem Installer in M5)
+- Keine OpenAPI-Spezifikation (geplant, noch nicht umgesetzt)
+- CLI deckt bisher nur Domains/Benutzer ab, keine Aliase/Verteiler/Weiterleitungen
+
 ### Hinzugefügt (M1: sicherer Kern)
 - Kern-Datenmodell als sqlx-Migrationen (`backend/migrations/0001_core_schema.sql`): Domains, Benutzer, Aliase, Verteiler, Weiterleitungen, API-Tokens, Sessions, DKIM-Schlüssel, Audit-Log, Backup-Runs, DNS-Checks
 - SQL-Views für Postfix-/Dovecot-Lookups (`0002_mail_lookup_views.sql`): virtuelle Domains/Mailboxen/Aliase inkl. Catch-all und Verteiler, Dovecot-SASL-Auth-View — Postfix/Dovecot fragen diese direkt und read-only ab, kein eigener Vermittlungscode
