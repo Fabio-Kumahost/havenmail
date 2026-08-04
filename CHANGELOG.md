@@ -4,6 +4,19 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/), Ve
 
 ## [Unreleased]
 
+### Hinzugefügt (M4: Web-UI)
+- React-Router-basierte Admin-Oberfläche: Login, Dashboard (API-Health), Domain-Liste/-Anlage, Domain-Detailseite mit Benutzer-/Alias-CRUD
+- DNS-Einrichtungsassistent: kopierfertige Einträge (MX/SPF/DKIM/DMARC), DKIM-Schlüsselerzeugung per Klick, Live-DNS-Prüfung mit Ergebnisanzeige
+- API-Client mit automatischem Access-Token-Refresh bei 401
+- Light/Dark-Mode über `prefers-color-scheme`
+- 3 Frontend-Tests (App-Routing, API-Fehlerbehandlung)
+
+### Bekannt / Noch ausstehend (nach M4)
+- Fehlende Admin-Bereiche aus der Aufgabenstellung: Quotas-Übersicht, Warteschlangen, Zustellfehler, Spam-/Virenereignisse, TLS-Zertifikate, System-/Audit-Protokolle, Backup-Status, Updates, Dienste/Ressourcenauslastung — benötigen teils noch fehlende Backend-Endpunkte bzw. installierte Mail-Engines (M5)
+- Kein Verteiler-/Weiterleitungs-UI (nur über CLI/API verfügbar)
+- Keine Suche/Filter/Sortierung/Pagination in den Tabellen
+- Kein Wizard für Erst-Setup/Bootstrap des allerersten super_admin in der UI
+
 ### Hinzugefügt (M3: Sicherheit & Zustellbarkeit)
 - DKIM-Schlüsselerzeugung (RSA-2048 über `rsa`-Crate), private Schlüssel ausschließlich AES-256-GCM-verschlüsselt gespeichert (`HAVENMAIL_SECRETS_KEY`)
 - DNS-Prüfung (MX, SPF, DKIM, DMARC) über `hickory-resolver` mit Ergebnis-Historie in `dns_checks`

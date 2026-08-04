@@ -1,34 +1,41 @@
 /**
  * Havenmail Admin-Oberfläche.
  *
- * STATUS (M0): Skeleton. Zeigt den API-Health-Status an. Die vollständige
- * Admin-Oberfläche (Dashboard, Domains, Benutzer, Aliase, Queues, DNS-
- * Assistent, TLS, Audit-Log, Backups, ...) folgt in Meilenstein M4, siehe
- * docs/architecture.md im Repo-Root.
+ * STATUS (M4): Login, Dashboard (nur Health-Status), Domain-Verwaltung,
+ * Benutzer-/Alias-CRUD, DNS-Einrichtungsassistent (kopierbare Einträge +
+ * Live-Prüfung), DKIM-Schlüsselerzeugung. Weitere in der Aufgabenstellung
+ * genannte Bereiche (Quotas, Warteschlangen, Zustellfehler, Spam-/
+ * Virenereignisse, TLS-Zertifikate, System-/Audit-Protokolle, Backup-Status,
+ * Updates, Dienste/Ressourcen) sind noch nicht umgesetzt — sie benötigen
+ * die installierten Mail-Engines (M5) bzw. weitere Backend-Endpunkte, die
+ * noch nicht existieren. Siehe CHANGELOG.md für den genauen Stand.
  */
-import { useEffect, useState } from 'react'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { AuthProvider } from './AuthContext'
+import RequireAuth from './pages/RequireAuth'
+import Layout from './pages/Layout'
+import Login from './pages/Login'
+import Dashboard from './pages/Dashboard'
+import Domains from './pages/Domains'
+import DomainDetail from './pages/DomainDetail'
 import './App.css'
 
-type HealthStatus = 'checking' | 'ok' | 'unreachable'
-
 function App() {
-  const [status, setStatus] = useState<HealthStatus>('checking')
-
-  useEffect(() => {
-    const apiBase = import.meta.env.VITE_HAVENMAIL_API_URL ?? 'http://127.0.0.1:8080'
-    fetch(`${apiBase}/healthz`)
-      .then((res) => (res.ok ? setStatus('ok') : setStatus('unreachable')))
-      .catch(() => setStatus('unreachable'))
-  }, [])
-
   return (
-    <main>
-      <h1>Havenmail</h1>
-      <p>Eigenständige Mailserver-Plattform — Admin-Oberfläche (Skeleton, M0)</p>
-      <p>
-        Control-Plane API: <strong>{status}</strong>
-      </p>
-    </main>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route element={<RequireAuth />}>
+            <Route element={<Layout />}>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/domains" element={<Domains />} />
+              <Route path="/domains/:domainId" element={<DomainDetail />} />
+            </Route>
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   )
 }
 

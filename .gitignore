@@ -16,5 +16,6 @@ secrets/
 .idea/
 .vscode/
 
-# Tooling-Artefakte (claude-flow/ruflo), keine Projektinhalte
+# Tooling-Artefakte (claude-flow/ruflo, graphify-Analyse), keine Projektinhalte
 .claude-flow/
+/graphify-out/

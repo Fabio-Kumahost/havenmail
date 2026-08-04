@@ -4,19 +4,11 @@ import App from './App'
 
 describe('App', () => {
   beforeEach(() => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({ ok: true } as Response),
-    )
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) } as Response))
   })
 
-  it('rendert den Havenmail-Titel', () => {
+  it('leitet nicht angemeldete Nutzer zum Login um', async () => {
     render(<App />)
-    expect(screen.getByRole('heading', { name: 'Havenmail' })).toBeInTheDocument()
-  })
-
-  it('zeigt zunächst den Prüfstatus der API an', () => {
-    render(<App />)
-    expect(screen.getByText('checking')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Havenmail Admin' })).toBeInTheDocument()
   })
 })
