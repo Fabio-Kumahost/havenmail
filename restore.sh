@@ -20,14 +20,22 @@ source "${SCRIPT_DIR}/scripts/lib/backup_steps.sh"
 
 TARGET=""
 FORCE=0
-for arg in "$@"; do
-  case "$arg" in
+# Sowohl "--target=wert" als auch "--target wert" akzeptieren (echter
+# Bugfund: --help dokumentierte die Leerzeichen-Form, geparst wurde aber
+# nur "=" — schlug beim eigenen End-to-End-Test fehl).
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --list)
       havenmail_backup_list
       exit 0
       ;;
-    --force) FORCE=1 ;;
-    --target=*) TARGET="${arg#--target=}" ;;
+    --force) FORCE=1; shift ;;
+    --target=*) TARGET="${1#--target=}"; shift ;;
+    --target)
+      TARGET="${2:-}"
+      [[ -n "$TARGET" ]] || { echo "Fehler: --target erwartet einen Wert." >&2; exit 1; }
+      shift 2
+      ;;
     --help|-h)
       cat <<'EOF'
 Verwendung: restore.sh --target <backup-datei> [--force]
@@ -45,6 +53,7 @@ gelöscht — nach erfolgreicher Prüfung manuell entfernen.
 EOF
       exit 0
       ;;
+    *) shift ;;
   esac
 done
 

@@ -16,13 +16,21 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Für den Self-Bootstrap-Re-Exec weiter unten (`exec bash install.sh "$@"`)
+# — die Parser-Schleife darunter konsumiert "$@" per shift, das Original
+# bleibt hier erhalten.
+ORIGINAL_ARGS=("$@")
 
 UNATTENDED=0
 VERSION_REF="main"
-for arg in "$@"; do
-  case "$arg" in
-    --unattended) UNATTENDED=1 ;;
-    --version=*) VERSION_REF="${arg#--version=}" ;;
+# Sowohl "--version=wert" als auch "--version wert" akzeptieren (echter
+# Bugfund beim End-to-End-Test: --help dokumentierte die Leerzeichen-Form,
+# geparst wurde aber nur "=").
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --unattended) UNATTENDED=1; shift ;;
+    --version=*) VERSION_REF="${1#--version=}"; shift ;;
+    --version) VERSION_REF="${2:-main}"; shift 2 ;;
     --help|-h)
       cat <<'EOF'
 Verwendung: install.sh [--unattended] [--version <tag>]
@@ -34,6 +42,7 @@ Verwendung: install.sh [--unattended] [--version <tag>]
 EOF
       exit 0
       ;;
+    *) shift ;;
   esac
 done
 
@@ -82,7 +91,7 @@ else
       "$HAVENMAIL_REPO_DIR"
   fi
   echo "Starte Installer aus dem vollständigen Checkout neu…"
-  exec bash "${HAVENMAIL_REPO_DIR}/install.sh" "$@"
+  exec bash "${HAVENMAIL_REPO_DIR}/install.sh" "${ORIGINAL_ARGS[@]}"
 fi
 
 # shellcheck source=scripts/lib/install_steps.sh

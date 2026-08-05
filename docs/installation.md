@@ -17,9 +17,20 @@
 Solange das Repository nicht öffentlich unter einer echten URL liegt, funktioniert der unten beschriebene Single-File-curl-Einzeiler nicht (er braucht eine erreichbare `HAVENMAIL_SOURCE_REPO`). Bis dahin:
 
 ```bash
-# Repo auf den Zielserver bringen, z. B.:
+# Repo auf den Zielserver bringen, z. B. per rsync (falls auf dem Server
+# installiert):
 rsync -a --exclude target --exclude node_modules --exclude .git \
   ~/havenmail/ root@mail.example.org:/opt/havenmail/
+
+# Falls rsync auf dem Zielserver fehlt (frische Minimal-Installation),
+# alternativ tar über ssh — von macOS aus UNBEDINGT mit
+# COPYFILE_DISABLE=1, sonst landen AppleDouble-Metadaten-Dateien (._*) im
+# migrations-Verzeichnis und `cargo build` bricht mit "expected integer
+# version prefix" ab (real sowohl in einem Testcontainer als auch bei einer
+# echten Erstinstallation aufgetreten):
+COPYFILE_DISABLE=1 tar -C ~/havenmail --exclude=backend/target \
+  --exclude=frontend/node_modules --exclude=frontend/dist --exclude=.git \
+  -cf - . | ssh root@mail.example.org 'mkdir -p /opt/havenmail && tar -C /opt/havenmail -xf -'
 
 ssh root@mail.example.org
 cd /opt/havenmail

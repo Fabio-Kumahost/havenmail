@@ -33,11 +33,15 @@ export HAVENMAIL_REPO_DIR
 TARGET_REF="${HAVENMAIL_UPDATE_TARGET_REF:-main}"
 ALLOW_MAJOR=0
 SKIP_BACKUP=0
-for arg in "$@"; do
-  case "$arg" in
-    --version=*) TARGET_REF="${arg#--version=}" ;;
-    --major) ALLOW_MAJOR=1 ;;
-    --skip-backup) SKIP_BACKUP=1 ;;
+# Sowohl "--version=wert" als auch "--version wert" akzeptieren (echter
+# Bugfund beim End-to-End-Test von restore.sh — dieselbe Inkonsistenz
+# zwischen --help-Text und Parser bestand hier auch).
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --version=*) TARGET_REF="${1#--version=}"; shift ;;
+    --version) TARGET_REF="${2:-main}"; shift 2 ;;
+    --major) ALLOW_MAJOR=1; shift ;;
+    --skip-backup) SKIP_BACKUP=1; shift ;;
     --help|-h)
       cat <<'EOF'
 Verwendung: update.sh [--version <ref>] [--major] [--skip-backup]
@@ -48,6 +52,7 @@ Verwendung: update.sh [--version <ref>] [--major] [--skip-backup]
 EOF
       exit 0
       ;;
+    *) shift ;;
   esac
 done
 

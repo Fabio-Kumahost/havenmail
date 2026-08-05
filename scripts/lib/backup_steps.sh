@@ -109,16 +109,26 @@ havenmail_backup_restore() {
   pg_restore --format=custom --clean --if-exists --no-owner \
     --dbname="$db_url" "${stage_dir}/db.dump"
 
+  # KRITISCH: hier NIEMALS `install -d` auf $(dirname "$HAVENMAIL_ETC_DIR")
+  # bzw. $(dirname "$HAVENMAIL_MAIL_DIR") aufrufen — das wäre /etc bzw.
+  # /var/mail, die auf jedem laufenden System bereits existieren. `install
+  # -d` chmod/chown't ein bestehendes Zielverzeichnis auf die angegebenen
+  # Werte um, statt es nur bei Bedarf anzulegen. Real aufgetreten: ein
+  # End-to-End-Restore-Test setzte dadurch die Berechtigungen von /etc
+  # systemweit auf 0750 root:havenmail und von /var/mail auf
+  # havenmail:havenmail — praktisch jeder andere Dienst auf dem Host verlor
+  # dadurch den Lesezugriff auf seine eigene Konfiguration. Die Elternver-
+  # zeichnisse existieren immer bereits; nur das Zielverzeichnis selbst
+  # (HAVENMAIL_ETC_DIR/HAVENMAIL_MAIL_DIR, s.u. via cp -a neu angelegt)
+  # braucht unsere Berechtigungen, nicht ihr Parent.
   if [[ -d "$HAVENMAIL_ETC_DIR" ]]; then
     mv "$HAVENMAIL_ETC_DIR" "${HAVENMAIL_ETC_DIR}.before-restore-${ts}"
   fi
-  install -d -m 0750 -o root -g "$HAVENMAIL_SYSTEM_USER" "$(dirname "$HAVENMAIL_ETC_DIR")"
   cp -a "${stage_dir}${HAVENMAIL_ETC_DIR}" "$HAVENMAIL_ETC_DIR"
 
   if [[ -d "$HAVENMAIL_MAIL_DIR" ]]; then
     mv "$HAVENMAIL_MAIL_DIR" "${HAVENMAIL_MAIL_DIR}.before-restore-${ts}"
   fi
-  install -d -m 0750 -o "$HAVENMAIL_SYSTEM_USER" -g "$HAVENMAIL_SYSTEM_USER" "$(dirname "$HAVENMAIL_MAIL_DIR")"
   cp -a "${stage_dir}${HAVENMAIL_MAIL_DIR}" "$HAVENMAIL_MAIL_DIR"
   chown -R "$HAVENMAIL_SYSTEM_USER":"$HAVENMAIL_SYSTEM_USER" "$HAVENMAIL_MAIL_DIR"
 
