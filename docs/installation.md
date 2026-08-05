@@ -12,22 +12,30 @@
 - Offene ausgehende Verbindung zu Let's-Encrypt (ACME) und Debian-Paketquellen
 - Mindestens 2 GB RAM, 2 vCPU, 20 GB freier Speicher (vorläufige Empfehlung, noch nicht anhand realer Lasttests validiert)
 
-## Ablauf (heutiger Stand — Repo noch nicht auf GitHub veröffentlicht)
-
-Solange das Repository nicht öffentlich unter einer echten URL liegt, funktioniert der unten beschriebene Single-File-curl-Einzeiler nicht (er braucht eine erreichbare `HAVENMAIL_SOURCE_REPO`). Bis dahin:
+## One-Liner (Repo ist auf GitHub veröffentlicht)
 
 ```bash
-# Repo auf den Zielserver bringen, z. B. per rsync (falls auf dem Server
-# installiert):
+curl -fsSL https://raw.githubusercontent.com/Fabio-Kumahost/havenmail/main/install.sh | sudo bash
+```
+
+Lädt zunächst nur `install.sh`; das Skript erkennt das Fehlen von `scripts/lib/`, klont daraufhin den vollständigen Quellcode nach `/opt/havenmail` (via `HAVENMAIL_SOURCE_REPO`, Standard [github.com/Fabio-Kumahost/havenmail](https://github.com/Fabio-Kumahost/havenmail)) und startet sich von dort neu.
+
+## Alternative: manueller Transfer (z. B. eigener Fork, privater Checkout)
+
+```bash
+# per rsync (falls auf dem Server installiert):
 rsync -a --exclude target --exclude node_modules --exclude .git \
   ~/havenmail/ root@mail.example.org:/opt/havenmail/
 
-# Falls rsync auf dem Zielserver fehlt (frische Minimal-Installation),
-# alternativ tar über ssh — von macOS aus UNBEDINGT mit
-# COPYFILE_DISABLE=1, sonst landen AppleDouble-Metadaten-Dateien (._*) im
-# migrations-Verzeichnis und `cargo build` bricht mit "expected integer
-# version prefix" ab (real sowohl in einem Testcontainer als auch bei einer
-# echten Erstinstallation aufgetreten):
+# oder git clone direkt auf dem Server:
+ssh root@mail.example.org 'git clone https://github.com/Fabio-Kumahost/havenmail.git /opt/havenmail'
+
+# Falls weder rsync noch git verfügbar sind (frische Minimal-Installation),
+# alternativ tar über ssh — von macOS aus UNBEDINGT mit COPYFILE_DISABLE=1,
+# sonst landen AppleDouble-Metadaten-Dateien (._*) im migrations-Verzeichnis
+# und `cargo build` bricht mit "expected integer version prefix" ab (real
+# sowohl in einem Testcontainer als auch bei einer echten Erstinstallation
+# aufgetreten):
 COPYFILE_DISABLE=1 tar -C ~/havenmail --exclude=backend/target \
   --exclude=frontend/node_modules --exclude=frontend/dist --exclude=.git \
   -cf - . | ssh root@mail.example.org 'mkdir -p /opt/havenmail && tar -C /opt/havenmail -xf -'
@@ -38,14 +46,6 @@ sudo bash install.sh
 ```
 
 `install.sh` erkennt anhand von `scripts/lib/common.sh` neben sich selbst, dass es bereits in einem vollständigen Checkout läuft, und installiert direkt von dort — kein Nachladen nötig.
-
-## Geplanter One-Liner (sobald auf GitHub veröffentlicht)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Fabio-Kumahost/havenmail/main/install.sh | sudo bash
-```
-
-Lädt zunächst nur `install.sh`; das Skript erkennt das Fehlen von `scripts/lib/`, klont daraufhin den vollständigen Quellcode nach `/opt/havenmail` (via `HAVENMAIL_SOURCE_REPO`, Standard `https://github.com/Fabio-Kumahost/havenmail.git` — `Fabio-Kumahost` muss beim Veröffentlichen ersetzt werden) und startet sich von dort neu.
 
 ## Empfohlene, sichere Variante
 
@@ -84,7 +84,7 @@ Ohne `--unattended` fragt `install.sh` diese vier Werte interaktiv ab.
 11. Health-Check (`/healthz`)
 12. Ersten `super_admin` anlegen (Zugangsdaten unter `/etc/havenmail/initial-admin-credentials`, 0640)
 
-Bekannte Lücke: Es gibt noch keinen automatisierten Test dieses gesamten Ablaufs auf einer frischen VM — jeder Schritt wurde einzeln gegen eine lokale Dev-Umgebung verifiziert (siehe CHANGELOG.md).
+Verifiziert per Docker-Debian-12-Simulation (systemd, echte Pakete/Build) und einer echten VM-Erstinstallation — siehe CHANGELOG.md für Details und dabei gefundene/behobene Bugs.
 
 ## Nächste Schritte nach Installation
 

@@ -2,7 +2,7 @@
 
 Havenmail ist eine eigenständig entwickelte, quelloffene Mailserver-Plattform für Debian 12/13. Sie orchestriert bewährte, aktiv gepflegte Mail-Engines (Postfix, Dovecot, Rspamd, ClamAV) über eine selbst entwickelte Control-Plane (Rust) mit REST-Admin-API und moderner Web-Oberfläche (React/TypeScript).
 
-> **Projektstatus: früher Aufbau (M4 von M6).** Havenmail befindet sich in aktiver Entwicklung und ist **noch nicht produktionsreif**. Umgesetzt sind bisher das Repository-Grundgerüst, das Kern-Datenmodell (PostgreSQL-Migrationen), Auth-/RBAC-Bausteine, die Postfix-/Dovecot-/Rspamd-Konfigurationstemplates sowie eine REST-Admin-API samt CLI für Domain-/Benutzer-/Alias-/Weiterleitungsverwaltung (inkl. Mail-Loop-Schutz). Es gibt noch **keinen** Installer, keine OpenAPI-Spezifikation und keinen lauffähigen Mailserver-Betrieb (Postfix/Dovecot/Rspamd sind konfiguriert, aber nicht installiert) — siehe [CHANGELOG.md](CHANGELOG.md) und [docs/architecture.md](docs/architecture.md) für den genauen Stand je Meilenstein. Verwende Havenmail derzeit **nicht** für produktiven Mailbetrieb.
+> **Projektstatus: M5 von M6 abgeschlossen.** Installer, REST-Admin-API, CLI, Web-Oberfläche (inkl. System-Status und Audit-Log), Backup/Restore/Update/Deinstallation sind implementiert und per Docker-Debian-12-Simulation sowie einer echten VM-Erstinstallation end-to-end verifiziert (siehe [CHANGELOG.md](CHANGELOG.md) für Details und dabei gefundene/behobene Bugs). Offen: OpenAPI-Spezifikation, M6-Abnahmetests (Open-Relay-Test, Zustellungstests) — siehe [docs/architecture.md](docs/architecture.md) für den genauen Stand je Meilenstein.
 
 ## Warum Havenmail
 
@@ -18,7 +18,7 @@ Eigenständig entwickelt sind: Datenmodell, Domain-/Benutzerverwaltung, REST-API
 
 Details zu Architektur, Bedrohungsmodell, Datenmodell und Meilensteinen: siehe [docs/architecture.md](docs/architecture.md).
 
-## Installation (Zielbild — noch nicht verfügbar)
+## Installation
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Fabio-Kumahost/havenmail/main/install.sh | sudo bash
@@ -32,7 +32,7 @@ less install.sh
 sudo bash install.sh
 ```
 
-`install.sh` ist vollständig implementiert; solange das Repo nicht auf GitHub veröffentlicht ist, funktioniert der obige Einzeiler noch nicht — siehe [docs/installation.md](docs/installation.md) für den heute funktionierenden Ablauf (Repo auf den Server kopieren, `sudo bash install.sh`) und den vollständigen Funktionsumfang.
+Details, Voraussetzungen (DNS, offene Ports) und der vollständige Ablauf: [docs/installation.md](docs/installation.md).
 
 ## Repository-Struktur
 
