@@ -239,9 +239,11 @@ havenmail_render_configs() {
     awk '
       /^ssl_cert[[:space:]]*=/ {
         sub(/^ssl_cert/, "ssl_server_cert_file")
+        sub(/=[[:space:]]*</, "= ")
       }
       /^ssl_key[[:space:]]*=/ {
         sub(/^ssl_key/, "ssl_server_key_file")
+        sub(/=[[:space:]]*</, "= ")
       }
       /^ssl_prefer_server_ciphers[[:space:]]*=/ {
         sub(/^ssl_prefer_server_ciphers/, "ssl_server_prefer_ciphers")
