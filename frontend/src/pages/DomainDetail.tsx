@@ -62,6 +62,7 @@ export default function DomainDetail() {
                 </td>
                 <td>
                   <button
+                    className="btn-danger"
                     onClick={() =>
                       api.users
                         .delete(u.id)
@@ -105,6 +106,7 @@ export default function DomainDetail() {
                 <td>{a.destinations.join(', ')}</td>
                 <td>
                   <button
+                    className="btn-danger"
                     onClick={() =>
                       api.aliases
                         .delete(a.id)
