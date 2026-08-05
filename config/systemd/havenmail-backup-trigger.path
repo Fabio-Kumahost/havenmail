@@ -1,0 +1,9 @@
+[Unit]
+Description=Beobachtet die Backup-Trigger-Datei der Control-Plane-API
+
+[Path]
+PathModified=/var/lib/havenmail/backup-trigger-request
+Unit=havenmail-backup.service
+
+[Install]
+WantedBy=multi-user.target

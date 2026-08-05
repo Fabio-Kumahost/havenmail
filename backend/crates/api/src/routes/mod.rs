@@ -1,9 +1,11 @@
 pub mod aliases;
 pub mod audit;
 pub mod auth;
+pub mod backup;
 pub mod distribution_lists;
 pub mod dns;
 pub mod domains;
+pub mod fail2ban;
 pub mod forwards;
 pub mod mail_queue;
 pub mod security_settings;
@@ -34,6 +36,10 @@ pub fn router() -> Router<AppState> {
         .route(
             "/api/v1/domains/:domain_id/users",
             post(users::create_user).get(users::list_users),
+        )
+        .route(
+            "/api/v1/domains/:domain_id/users/storage",
+            get(users::get_users_storage),
         )
         .route(
             "/api/v1/users/:user_id",
@@ -101,5 +107,9 @@ pub fn router() -> Router<AppState> {
             "/api/v1/system/mail-queue/:queue_id",
             delete(mail_queue::delete_queue_entry),
         )
+        .route("/api/v1/system/fail2ban", get(fail2ban::get_status))
+        .route("/api/v1/system/fail2ban/unban", post(fail2ban::unban))
+        .route("/api/v1/system/backup", get(backup::get_status))
+        .route("/api/v1/system/backup/trigger", post(backup::trigger))
         .route("/api/v1/audit-log", get(audit::list_audit_log))
 }

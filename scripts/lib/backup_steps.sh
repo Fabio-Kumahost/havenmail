@@ -22,7 +22,12 @@ havenmail_backup_create() {
   stage_dir="$(mktemp -d)"
   trap 'rm -rf "$stage_dir"' RETURN
 
-  install -d -m 0700 "$HAVENMAIL_BACKUP_DIR"
+  # 0750 statt 0700: die Gruppe "havenmail" darf das Verzeichnis lesen/
+  # durchsuchen (Dateiname+Größe+Zeitpunkt sichtbar, für die Backup-
+  # Historie im Admin-Panel, siehe routes/backup.rs), die Archive selbst
+  # bleiben 0600 root:root — Datei-INHALT (DB-Dump, Geheimnisse,
+  # Maildaten) bleibt ausschließlich root vorbehalten.
+  install -d -m 0750 -o root -g havenmail "$HAVENMAIL_BACKUP_DIR"
 
   db_url="$(havenmail_env_get DATABASE_URL)"
   havenmail_log "Sichere Datenbank (pg_dump, custom format)…"
@@ -68,7 +73,12 @@ havenmail_backup_apply_retention() {
 }
 
 havenmail_backup_list() {
-  install -d -m 0700 "$HAVENMAIL_BACKUP_DIR"
+  # 0750 statt 0700: die Gruppe "havenmail" darf das Verzeichnis lesen/
+  # durchsuchen (Dateiname+Größe+Zeitpunkt sichtbar, für die Backup-
+  # Historie im Admin-Panel, siehe routes/backup.rs), die Archive selbst
+  # bleiben 0600 root:root — Datei-INHALT (DB-Dump, Geheimnisse,
+  # Maildaten) bleibt ausschließlich root vorbehalten.
+  install -d -m 0750 -o root -g havenmail "$HAVENMAIL_BACKUP_DIR"
   find "$HAVENMAIL_BACKUP_DIR" -maxdepth 1 -type f -name 'havenmail-*.tar.gz*' | sort
 }
 

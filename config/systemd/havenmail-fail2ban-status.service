@@ -1,0 +1,6 @@
+[Unit]
+Description=Havenmail Fail2Ban-Status-Aktualisierung
+
+[Service]
+Type=oneshot
+ExecStart=/opt/havenmail/backend/target/release/havenmail-cli fail2ban-refresh-status

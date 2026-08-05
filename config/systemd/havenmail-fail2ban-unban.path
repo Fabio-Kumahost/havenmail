@@ -1,0 +1,9 @@
+[Unit]
+Description=Beobachtet die Fail2Ban-Entsperr-Trigger-Datei der Control-Plane-API
+
+[Path]
+PathModified=/var/lib/havenmail/fail2ban-unban-request
+Unit=havenmail-fail2ban-unban.service
+
+[Install]
+WantedBy=multi-user.target

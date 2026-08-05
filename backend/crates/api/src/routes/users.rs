@@ -113,6 +113,53 @@ pub async fn list_users(
     Ok(Json(users))
 }
 
+#[derive(Debug, Serialize)]
+pub struct UserStorage {
+    pub id: Uuid,
+    /// `None`, wenn die Mailbox noch nie ein IMAP-Login hatte (Maildir
+    /// existiert dann noch nicht, siehe havenmail_core::mailbox_storage).
+    pub bytes: Option<i64>,
+}
+
+/// Separater Endpunkt statt Erweiterung von `list_users`: `du -sb` pro
+/// Postfach kostet spürbar mehr Zeit als die reine DB-Abfrage — Domains
+/// mit vielen Postfächern sollen die schnelle Liste nicht auf die
+/// langsamste Mailbox warten lassen. Das Frontend lädt Storage separat
+/// nach und merged per `id`.
+pub async fn get_users_storage(
+    State(state): State<AppState>,
+    AuthUser(actor): AuthUser,
+    Path(domain_id): Path<Uuid>,
+) -> ApiResult<Json<Vec<UserStorage>>> {
+    if !actor.can(Action::ManageDomainUsers, Some(domain_id)) {
+        return Err(ApiError::Forbidden);
+    }
+    let domain_name: String = sqlx::query_scalar("SELECT name FROM domains WHERE id = $1")
+        .bind(domain_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+
+    let users: Vec<(Uuid, String)> =
+        sqlx::query_as("SELECT id, local_part FROM users WHERE domain_id = $1 ORDER BY local_part")
+            .bind(domain_id)
+            .fetch_all(&state.db)
+            .await?;
+
+    let mail_base =
+        std::env::var("HAVENMAIL_MAIL_DIR").unwrap_or_else(|_| "/var/mail/havenmail".to_string());
+
+    let mut out = Vec::with_capacity(users.len());
+    for (id, local_part) in users {
+        let path = std::path::Path::new(&mail_base)
+            .join(&domain_name)
+            .join(&local_part);
+        let bytes = havenmail_core::mailbox_storage::usage_bytes(&path).await;
+        out.push(UserStorage { id, bytes });
+    }
+    Ok(Json(out))
+}
+
 async fn fetch_user_or_404(pool: &sqlx::PgPool, user_id: Uuid) -> ApiResult<User> {
     sqlx::query_as(
         "SELECT id, domain_id, local_part, role::text as role, quota_bytes, is_active, created_at FROM users WHERE id = $1",

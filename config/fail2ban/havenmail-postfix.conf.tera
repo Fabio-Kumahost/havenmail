@@ -1,11 +1,16 @@
 # Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
-# Fail2ban-Jail für Postfix (SASL-Auth-Fehler bei Submission/SMTPS).
-# Nutzt fail2bans mitgelieferte Standardfilter (keine Eigenimplementierung).
+# Fail2ban-Jail für Postfix (SASL-Auth-Fehler bei Submission/SMTPS). Muss
+# unter /etc/fail2ban/jail.d/ liegen, NICHT filter.d/ — das ist eine
+# Jail-Definition (referenziert fail2bans mitgeliefertes postfix.conf im
+# auth-Modus), keine eigene Filter-Regex. Debian hat kein /var/log/mail.log
+# (Postfix loggt per Default über journald), daher explizit
+# backend=systemd statt des sonst üblichen logpath.
 [postfix-sasl]
 enabled = true
+backend = systemd
+journalmatch = _SYSTEMD_UNIT=postfix.service
 port = smtp,465,submission
-filter = postfix-sasl
-logpath = /var/log/mail.log
+filter = postfix[mode=auth]
 maxretry = 5
 findtime = 15m
 bantime = 1h

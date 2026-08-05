@@ -10,11 +10,25 @@ import {
   ApiError,
 } from '../api'
 
+function formatBytes(bytes: number | null | undefined): string {
+  if (bytes == null) return '—'
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KB', 'MB', 'GB', 'TB']
+  let value = bytes / 1024
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${value.toFixed(1)} ${units[unit]}`
+}
+
 export default function DomainDetail() {
   const { domainId } = useParams<{ domainId: string }>()
   const [domain, setDomain] = useState<Domain | null>(null)
   const [users, setUsers] = useState<User[]>([])
   const [aliases, setAliases] = useState<Alias[]>([])
+  const [storageById, setStorageById] = useState<Record<string, number | null>>({})
   const [error, setError] = useState<string | null>(null)
 
   function reload() {
@@ -22,6 +36,13 @@ export default function DomainDetail() {
     api.domains.get(domainId).then(setDomain).catch(() => {})
     api.users.list(domainId).then(setUsers).catch(() => {})
     api.aliases.list(domainId).then(setAliases).catch(() => {})
+    // Separater, langsamerer Aufruf (du -sb pro Mailbox) — soll die
+    // schnelle Benutzerliste oben nicht blockieren, siehe
+    // routes/users.rs::get_users_storage.
+    api.users
+      .storage(domainId)
+      .then((rows) => setStorageById(Object.fromEntries(rows.map((r) => [r.id, r.bytes]))))
+      .catch(() => {})
   }
 
   useEffect(reload, [domainId])
@@ -45,39 +66,24 @@ export default function DomainDetail() {
               <th>Adresse</th>
               <th>Rolle</th>
               <th>Status</th>
+              <th>Speicher</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {users.map((u) => (
-              <tr key={u.id}>
-                <td>
-                  {u.local_part}@{domain?.name}
-                </td>
-                <td>{u.role}</td>
-                <td>
-                  <span className={`badge badge-${u.is_active ? 'ready' : 'not_ready'}`}>
-                    {u.is_active ? 'aktiv' : 'gesperrt'}
-                  </span>
-                </td>
-                <td>
-                  <button
-                    className="btn-danger"
-                    onClick={() =>
-                      api.users
-                        .delete(u.id)
-                        .then(reload)
-                        .catch((err) => setError(err instanceof ApiError ? err.message : 'Fehler'))
-                    }
-                  >
-                    Löschen
-                  </button>
-                </td>
-              </tr>
+              <UserRow
+                key={u.id}
+                user={u}
+                domainName={domain?.name}
+                storageBytes={storageById[u.id]}
+                onReload={reload}
+                onError={setError}
+              />
             ))}
             {users.length === 0 && (
               <tr>
-                <td colSpan={4} className="muted">
+                <td colSpan={5} className="muted">
                   Keine Benutzer.
                 </td>
               </tr>
@@ -132,6 +138,91 @@ export default function DomainDetail() {
 
       <DnsSection domainId={domainId} onError={setError} />
     </div>
+  )
+}
+
+function UserRow({
+  user,
+  domainName,
+  storageBytes,
+  onReload,
+  onError,
+}: {
+  user: User
+  domainName: string | undefined
+  storageBytes: number | null | undefined
+  onReload: () => void
+  onError: (msg: string) => void
+}) {
+  const [changingPassword, setChangingPassword] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  async function onSavePassword(e: FormEvent) {
+    e.preventDefault()
+    setSubmitting(true)
+    try {
+      await api.users.update(user.id, { password: newPassword })
+      setNewPassword('')
+      setChangingPassword(false)
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : 'Passwort ändern fehlgeschlagen')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      <tr>
+        <td>
+          {user.local_part}@{domainName}
+        </td>
+        <td>{user.role}</td>
+        <td>
+          <span className={`badge badge-${user.is_active ? 'ready' : 'not_ready'}`}>
+            {user.is_active ? 'aktiv' : 'gesperrt'}
+          </span>
+        </td>
+        <td className="muted">{formatBytes(storageBytes)}</td>
+        <td style={{ display: 'flex', gap: '0.5rem' }}>
+          <button onClick={() => setChangingPassword((v) => !v)}>
+            {changingPassword ? 'Abbrechen' : 'Passwort ändern'}
+          </button>
+          <button
+            className="btn-danger"
+            onClick={() =>
+              api.users
+                .delete(user.id)
+                .then(onReload)
+                .catch((err) => onError(err instanceof ApiError ? err.message : 'Fehler'))
+            }
+          >
+            Löschen
+          </button>
+        </td>
+      </tr>
+      {changingPassword && (
+        <tr>
+          <td colSpan={5}>
+            <form className="inline-form" onSubmit={onSavePassword} style={{ margin: 0 }}>
+              <input
+                type="password"
+                placeholder="Neues Passwort (min. 12 Zeichen)"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                minLength={12}
+                autoFocus
+              />
+              <button type="submit" disabled={submitting}>
+                {submitting ? 'Speichere…' : 'Speichern'}
+              </button>
+            </form>
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 
