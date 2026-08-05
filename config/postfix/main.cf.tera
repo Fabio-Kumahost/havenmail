@@ -56,6 +56,14 @@ smtp_tls_protocols = !SSLv2, !SSLv3, !TLSv1, !TLSv1.1
 # --- Limits ---
 message_size_limit = 52428800
 mailbox_size_limit = 0
+# virtual_mailbox_limit ist trotz ähnlichen Namens ein vom virtual(8)-
+# Delivery-Agent genutzter, von mailbox_size_limit unabhängiger
+# Parameter (postfix-eigene Falle). Default (51200000) liegt unter
+# message_size_limit (52428800) -> "fatal: configuration error:
+# virtual_mailbox_limit is smaller than message_size_limit", der
+# virtual-Agent crashlooped und JEDE lokale Zustellung bleibt in der
+# Queue hängen. 0 = unlimitiert, passend zu mailbox_size_limit oben.
+virtual_mailbox_limit = 0
 smtpd_client_connection_rate_limit = 30
 anvil_rate_time_unit = 60s
 
