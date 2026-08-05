@@ -7,6 +7,7 @@
 
 pub mod audit;
 pub mod auth;
+pub mod bootstrap;
 pub mod config_render;
 pub mod db;
 pub mod dkim;

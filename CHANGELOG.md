@@ -4,6 +4,17 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/), Ve
 
 ## [Unreleased]
 
+### Hinzugefügt (M5: Installer & Betrieb — in Arbeit)
+- `install.sh` implementiert vollständig: Preflight, Self-Bootstrap (Single-File-curl vs. bestehendes Checkout), Systembenutzer/-verzeichnisse, apt-Pakete, Rust-/Node-Toolchain-Install, PostgreSQL-Rolle/DB, TLS-Zertifikat (certbot, Standalone-Modus), Backend-/Frontend-Build, Deployment der gerenderten Postfix-/Dovecot-/Rspamd-/Fail2ban-Konfiguration an ihre Systempfade, Firewall (ufw), systemd-Unit, Dienststart, Health-Check
+- Neuer CLI-Befehl `havenmail-cli render-configs`: rendert alle `config/*.tera`-Templates lokal (nutzt die bereits getestete `havenmail_core::config_render`-Logik) — keine zweite Template-Engine in Bash
+- Neuer CLI-Befehl `havenmail-cli bootstrap-admin` + `havenmail_core::bootstrap`: legt idempotent die erste Domain und deren `super_admin`-Konto an; spricht direkt die DB an (kein unauthentifizierter API-Weg für die Kontoerstellung); generiertes Passwort landet ausschließlich in `/etc/havenmail/initial-admin-credentials` (0640), nie im Log
+- `config/systemd/havenmail-api.service`: gehärtete systemd-Unit für die Control-Plane-API
+
+### Bekannt / Noch ausstehend (nach M5, Zwischenstand)
+- Kein nginx-vhost-Template in `config/` — TLS läuft daher über certbot Standalone statt `--nginx`-Plugin; Reverse-Proxy für Admin-UI (`https://<hostname>/admin`) fehlt noch
+- `update.sh`/`backup.sh`/`restore.sh`/`uninstall.sh` sind weiterhin nur Gerüste, nutzen die neuen `scripts/lib/*`-Bausteine noch nicht
+- Kein End-to-End-Test des Installers auf einer frischen Debian-VM (nur einzelne Bausteine lokal gegen Dev-Postgres verifiziert)
+
 ### Hinzugefügt (M4: Web-UI)
 - React-Router-basierte Admin-Oberfläche: Login, Dashboard (API-Health), Domain-Liste/-Anlage, Domain-Detailseite mit Benutzer-/Alias-CRUD
 - DNS-Einrichtungsassistent: kopierfertige Einträge (MX/SPF/DKIM/DMARC), DKIM-Schlüsselerzeugung per Klick, Live-DNS-Prüfung mit Ergebnisanzeige

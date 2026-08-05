@@ -1,0 +1,33 @@
+[Unit]
+Description=Havenmail Control-Plane API
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=havenmail
+Group=havenmail
+EnvironmentFile=/etc/havenmail/havenmail.env
+ExecStart=/opt/havenmail/backend/target/release/havenmail-api
+Restart=on-failure
+RestartSec=2
+
+# Hardening — siehe docs/architecture.md, Sicherheitsmodell.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/havenmail /var/log/havenmail
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

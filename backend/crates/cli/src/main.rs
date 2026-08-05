@@ -54,6 +54,49 @@ enum Command {
     UserList { domain_id: String },
     /// Diagnose: erreichbar & Datenbankstatus.
     Status,
+    /// Rendert die Postfix-/Dovecot-/Rspamd-Konfigurationstemplates aus
+    /// `config/` mit den übergebenen Werten nach `--out-dir` (lokal, ohne
+    /// API-Zugriff — vom Installer genutzt, siehe scripts/lib/install_steps.sh).
+    RenderConfigs {
+        /// Wurzelverzeichnis mit den `*.tera`-Templates (Repo-`config/`-Ordner).
+        #[arg(long)]
+        config_dir: PathBuf,
+        /// Zielverzeichnis für die gerenderten Dateien.
+        #[arg(long)]
+        out_dir: PathBuf,
+        #[arg(long, env = "HAVENMAIL_HOSTNAME")]
+        mail_hostname: String,
+        #[arg(long, default_value = "127.0.0.1")]
+        db_host: String,
+        #[arg(long, default_value_t = 5432)]
+        db_port: u16,
+        #[arg(long, default_value = "havenmail")]
+        db_name: String,
+        #[arg(long, default_value = "havenmail")]
+        db_user: String,
+        #[arg(long, env = "HAVENMAIL_DB_PASSWORD")]
+        db_password: String,
+        #[arg(long, default_value = "/etc/havenmail/tls/fullchain.pem")]
+        tls_cert_path: String,
+        #[arg(long, default_value = "/etc/havenmail/tls/privkey.pem")]
+        tls_key_path: String,
+    },
+    /// Legt (idempotent) die erste Domain und deren `super_admin`-Konto an.
+    /// Spricht direkt die Datenbank an, nicht die API — es gibt bewusst
+    /// keinen unauthentifizierten API-Weg dafür (siehe
+    /// havenmail_core::bootstrap). Vom Installer nach dem ersten Dienststart
+    /// genutzt (scripts/lib/install_steps.sh).
+    BootstrapAdmin {
+        #[arg(long, env = "DATABASE_URL")]
+        database_url: String,
+        #[arg(long)]
+        domain: String,
+        /// Lokaler Teil der Admin-Adresse, z. B. "admin" für admin@domain.
+        #[arg(long, default_value = "admin")]
+        local_part: String,
+        #[arg(long)]
+        password: String,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -133,6 +176,40 @@ async fn main() {
             .await
         }
         Command::Status => authed_get(&client, &cli.api_url, "/readyz").await,
+        Command::RenderConfigs {
+            config_dir,
+            out_dir,
+            mail_hostname,
+            db_host,
+            db_port,
+            db_name,
+            db_user,
+            db_password,
+            tls_cert_path,
+            tls_key_path,
+        } => render_configs(
+            &config_dir,
+            &out_dir,
+            havenmail_core::config_render::RenderContext {
+                mail_hostname,
+                db_host,
+                db_port,
+                db_name,
+                db_user,
+                db_password,
+                tls_cert_path,
+                tls_key_path,
+            },
+        )
+        .map_err(|e| e.to_string()),
+        Command::BootstrapAdmin {
+            database_url,
+            domain,
+            local_part,
+            password,
+        } => bootstrap_admin(&database_url, &domain, &local_part, &password)
+            .await
+            .map_err(|e| e.to_string()),
     };
 
     match result {
@@ -201,6 +278,96 @@ async fn authed_post(
         .await
         .map_err(|e| e.to_string())?;
     response_to_value(response).await
+}
+
+/// Rendert alle Templates unter `config_dir` nach `out_dir` (Verzeichnisstruktur
+/// bleibt erhalten, `.tera`-Endung entfällt). Nutzt die bereits getestete
+/// `havenmail_core::config_render`-Logik (siehe M1) — keine eigene
+/// Template-Engine.
+fn render_configs(
+    config_dir: &std::path::Path,
+    out_dir: &std::path::Path,
+    ctx: havenmail_core::config_render::RenderContext,
+) -> Result<Value, havenmail_core::config_render::RenderError> {
+    let templates = find_relative_templates(config_dir)
+        .map_err(|e| havenmail_core::config_render::RenderError::Load(e.to_string()))?;
+
+    let mut rendered = Vec::new();
+    for rel in &templates {
+        let template_name = rel.to_string_lossy().replace('\\', "/");
+        let output =
+            havenmail_core::config_render::render_template(config_dir, &template_name, &ctx)?;
+
+        let out_path = out_dir.join(rel.with_extension(""));
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| havenmail_core::config_render::RenderError::Load(e.to_string()))?;
+        }
+        std::fs::write(&out_path, output)
+            .map_err(|e| havenmail_core::config_render::RenderError::Load(e.to_string()))?;
+        rendered.push(out_path.display().to_string());
+    }
+    Ok(json!({ "rendered": rendered }))
+}
+
+fn find_relative_templates(config_dir: &std::path::Path) -> std::io::Result<Vec<PathBuf>> {
+    fn walk(
+        base: &std::path::Path,
+        dir: &std::path::Path,
+        out: &mut Vec<PathBuf>,
+    ) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                walk(base, &path, out)?;
+            } else if path.extension().and_then(|e| e.to_str()) == Some("tera") {
+                out.push(path.strip_prefix(base).unwrap().to_path_buf());
+            }
+        }
+        Ok(())
+    }
+    let mut out = Vec::new();
+    walk(config_dir, config_dir, &mut out)?;
+    Ok(out)
+}
+
+/// Verbindet sich direkt mit der Datenbank (kein API-Token nötig — beim
+/// allerersten Lauf existiert noch kein Konto, das sich anmelden könnte)
+/// und legt Domain + super_admin idempotent an. Gibt den generierten
+/// Zugang niemals über stdout in Klartext-Log-Dateien aus, die von einem
+/// CI/Terminal-Recorder erfasst werden könnten — der Aufrufer (install.sh)
+/// ist dafür verantwortlich, die Ausgabe angemessen zu behandeln.
+async fn bootstrap_admin(
+    database_url: &str,
+    domain: &str,
+    local_part: &str,
+    password: &str,
+) -> Result<Value, String> {
+    let pool = havenmail_core::db::connect(database_url)
+        .await
+        .map_err(|e| e.to_string())?;
+    havenmail_core::db::run_migrations(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let outcome =
+        havenmail_core::bootstrap::bootstrap_super_admin(&pool, domain, local_part, password)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    Ok(match outcome {
+        havenmail_core::bootstrap::BootstrapOutcome::Created { domain_id, user_id } => json!({
+            "status": "created",
+            "domain_id": domain_id,
+            "user_id": user_id,
+        }),
+        havenmail_core::bootstrap::BootstrapOutcome::AlreadyExists { domain_id, user_id } => json!({
+            "status": "already_exists",
+            "domain_id": domain_id,
+            "user_id": user_id,
+        }),
+    })
 }
 
 async fn response_to_value(response: reqwest::Response) -> Result<Value, String> {

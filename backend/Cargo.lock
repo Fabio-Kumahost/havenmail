@@ -866,6 +866,7 @@ name = "havenmail-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "havenmail-core",
  "reqwest",
  "serde",
  "serde_json",
