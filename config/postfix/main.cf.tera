@@ -35,8 +35,17 @@ smtpd_recipient_restrictions =
     reject_unauth_pipelining,
     reject_non_fqdn_recipient,
     reject_unknown_recipient_domain,
-    reject_unauth_destination,
-    check_policy_service unix:private/rspamd-policy
+    reject_unauth_destination
+
+# Rspamd wird bereits per Milter angebunden (smtpd_milters/
+# non_smtpd_milters unten, inet:127.0.0.1:11332) - das deckt
+# Spam-/DKIM-/DMARC-Bewertung vollständig ab. Ein zusätzliches
+# "check_policy_service unix:private/rspamd-policy" in
+# smtpd_recipient_restrictions stand hier zusätzlich, obwohl kein
+# Rspamd-Worker in dieser Konfiguration einen Unix-Socket dieses Namens
+# je erstellt - jede eingehende Mail wurde dadurch mit "451 4.3.5
+# Server configuration problem" abgelehnt (Policy-Socket nicht
+# erreichbar). Ohne Ersatz entfernt, da der Milter-Pfad bereits genügt.
 
 # --- SASL-Authentifizierung über Dovecot ---
 smtpd_sasl_type = dovecot
