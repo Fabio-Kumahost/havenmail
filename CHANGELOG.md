@@ -23,7 +23,15 @@ Nach diesen Fixes lief der komplette Installer-Ablauf (Pakete → Build → Conf
 ### Audit-Log jetzt vollständig (alle Mutationen)
 `alias.create/delete`, `distribution_list.create/delete`, `forward.create/delete`, `dkim.generate` protokolliert (bisher nur `domain.*`/`user.*`). Neuer Integrationstest deckt alle vier neuen Ressourcentypen ab.
 
+### Behoben — kritisch, durch den echten `curl | sudo bash`-Einzeiler auf der VM des Nutzers gefunden
+- **`install.sh` brach bei Pipe-Ausführung (`curl ... | sudo bash`) mit "BASH_SOURCE[0]: unbound variable" ab, bevor überhaupt Preflight-Checks liefen.** `BASH_SOURCE[0]` ist bei Stdin-Ausführung leer — unter `set -u` ein Absturz. Fix: `SCRIPT_DIR`-Ermittlung prüft jetzt explizit, ob ein echter Datei-Pfad existiert, sonst `SCRIPT_DIR=""`.
+- Tiefer liegend: die Preflight-/`common.sh`-Sourcing-Reihenfolge ging davon aus, dass `scripts/lib/preflight.sh` immer "neben" `install.sh` liegt — im Single-File-curl-Fall (genau der dokumentierte Haupt-Anwendungsfall!) existiert diese Datei aber noch gar nicht, sie kommt erst durch den Self-Bootstrap-`git clone`. Self-Bootstrap läuft jetzt VOR dem Preflight-/Lib-Sourcing, mit minimalen Inline-Prüfungen (root, `git` vorhanden) für den Klon-Schritt selbst.
+- Verifiziert: `cat install.sh | bash` (simuliert die Pipe) kommt jetzt sauber bis zur erwarteten "muss als root laufen"-Meldung durch, kein Absturz mehr; `--help` funktioniert ebenfalls bei Pipe-Ausführung.
+- **Lehre**: Das Herunterladen des rohen `install.sh`-Inhalts per `curl` (wie zuvor "verifiziert") reicht nicht — erst das tatsächliche Piping in `bash` deckte diesen Bug auf. Der dokumentierte Haupt-Installationsweg war bis zu diesem Fund faktisch ungetestet.
+
 ### Hinzugefügt (M5: Installer & Betrieb)
+- `docs/openapi.yaml`: vollständige OpenAPI-3.0-Spezifikation der REST-Admin-API (20 Pfade, 14 Schemas) — schließt eine seit M0 dokumentierte Lücke
+- Repo auf GitHub veröffentlicht: [github.com/Fabio-Kumahost/havenmail](https://github.com/Fabio-Kumahost/havenmail) (öffentlich), `USERNAME`-Platzhalter überall ersetzt, curl-Einzeiler funktionsfähig
 - `install.sh` implementiert vollständig: Preflight, Self-Bootstrap (Single-File-curl vs. bestehendes Checkout), Systembenutzer/-verzeichnisse, apt-Pakete, Rust-/Node-Toolchain-Install, PostgreSQL-Rolle/DB, zweiphasiger nginx-/TLS-Rollout (Übergangs-vhost → certbot Webroot → voller HTTPS-Vhost), Backend-/Frontend-Build, Deployment der gerenderten Postfix-/Dovecot-/Rspamd-/Fail2ban-/nginx-Konfiguration an ihre Systempfade, Firewall (ufw), systemd-Unit, Dienststart, Health-Check
 - `config/nginx/havenmail-http.conf.tera` (Übergangs-vhost für die ACME-Challenge) und `havenmail.conf.tera` (voller HTTPS-Vhost: reverse-proxied `/api/`, `/healthz`, `/readyz` zur Control-Plane, liefert den Frontend-Build mit SPA-Fallback aus). Frontend wird mit `VITE_HAVENMAIL_API_URL=""` gebaut — same-origin, kein CORS nötig
 - Neuer CLI-Befehl `havenmail-cli render-configs`: rendert alle `config/*.tera`-Templates lokal (nutzt die bereits getestete `havenmail_core::config_render`-Logik) — keine zweite Template-Engine in Bash

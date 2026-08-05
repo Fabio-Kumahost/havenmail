@@ -15,7 +15,17 @@
 #
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# BASH_SOURCE[0] ist leer/nicht gesetzt, wenn das Skript per
+# `curl ... | sudo bash` über eine Pipe von stdin gelesen wird (kein
+# Datei-Pfad existiert dann) — unter `set -u` real aufgetreten: "bash:
+# BASH_SOURCE[0]: unbound variable". In diesem Fall gibt es keinen
+# SCRIPT_DIR, und der Self-Bootstrap-Zweig unten (kein scripts/lib/
+# gefunden) greift korrekt, um den vollen Quellcode zu holen.
+if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+  SCRIPT_DIR=""
+fi
 # Für den Self-Bootstrap-Re-Exec weiter unten (`exec bash install.sh "$@"`)
 # — die Parser-Schleife darunter konsumiert "$@" per shift, das Original
 # bleibt hier erhalten.
@@ -46,42 +56,35 @@ EOF
   esac
 done
 
-# --- Preflight (unabhängig davon, ob wir bereits im Repo laufen) ---
-if [[ -r "${SCRIPT_DIR}/scripts/lib/preflight.sh" ]]; then
-  # shellcheck source=scripts/lib/preflight.sh
-  source "${SCRIPT_DIR}/scripts/lib/preflight.sh"
-else
-  echo "Fehler: scripts/lib/preflight.sh nicht gefunden neben install.sh." >&2
-  exit 1
-fi
-
-echo "== Havenmail Installer =="
-echo
-
-havenmail_require_root
-havenmail_require_debian
-havenmail_check_arch
-havenmail_check_min_ram_mb 2048
-havenmail_check_min_disk_gb 20 /
-havenmail_check_ports_free 25 587 465 143 993 443
-echo
-
 # --- Self-Bootstrap: entweder wir laufen bereits aus einem vollständigen
 # Checkout (scripts/lib komplett vorhanden, z. B. `git clone` + `sudo bash
-# install.sh`), oder es wurde nur diese eine Datei per curl geladen — dann
-# zuerst den vollen Quellcode holen und den Installer von dort neu starten.
-if [[ -r "${SCRIPT_DIR}/scripts/lib/common.sh" && -r "${SCRIPT_DIR}/scripts/lib/install_steps.sh" ]]; then
+# install.sh`), oder es wurde nur diese eine Datei per curl/Pipe geladen —
+# dann zuerst den vollen Quellcode holen und den Installer von dort neu
+# starten. MUSS vor dem Preflight-/common.sh-Sourcing passieren: im
+# Single-File-Fall existieren scripts/lib/{preflight,common}.sh schlicht
+# noch nicht (früherer Bug: das Skript versuchte sie zu laden, bevor
+# feststand, ob das überhaupt möglich ist — brach mit "Fehler:
+# scripts/lib/preflight.sh nicht gefunden" ab, obwohl das der erwartete
+# Weg für den Single-File-curl-Einzeiler ist).
+if [[ -n "$SCRIPT_DIR" && -r "${SCRIPT_DIR}/scripts/lib/common.sh" \
+      && -r "${SCRIPT_DIR}/scripts/lib/install_steps.sh" \
+      && -r "${SCRIPT_DIR}/scripts/lib/preflight.sh" ]]; then
   HAVENMAIL_REPO_DIR="$SCRIPT_DIR"
   export HAVENMAIL_REPO_DIR
-  # shellcheck source=scripts/lib/common.sh
-  source "${SCRIPT_DIR}/scripts/lib/common.sh"
 else
-  # shellcheck source=scripts/lib/common.sh
-  # (common.sh selbst existiert bei Single-File-Download noch nicht lokal —
-  # Standardwerte kommen daher direkt aus den Env-Defaults der Variable.)
+  # Minimale Vorabprüfungen ohne common.sh/preflight.sh (die existieren an
+  # dieser Stelle noch nicht) — nur was zum Klonen selbst nötig ist.
+  if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+    echo "Fehler: Dieses Skript muss als root (bzw. mit sudo) ausgeführt werden." >&2
+    exit 1
+  fi
+  if ! command -v git >/dev/null 2>&1; then
+    echo "Fehler: git wird benötigt, um den vollständigen Quellcode zu holen." >&2
+    exit 1
+  fi
+
   HAVENMAIL_REPO_DIR="${HAVENMAIL_REPO_DIR:-/opt/havenmail}"
   echo "Hole vollständigen Quellcode nach ${HAVENMAIL_REPO_DIR}…"
-  havenmail_require_command git
   if [[ -d "${HAVENMAIL_REPO_DIR}/.git" ]]; then
     git -C "$HAVENMAIL_REPO_DIR" fetch --quiet origin
     git -C "$HAVENMAIL_REPO_DIR" checkout --quiet "$VERSION_REF"
@@ -94,8 +97,25 @@ else
   exec bash "${HAVENMAIL_REPO_DIR}/install.sh" "${ORIGINAL_ARGS[@]}"
 fi
 
+# --- Ab hier garantiert vollständiger Checkout: common.sh/preflight.sh/
+# install_steps.sh existieren alle unter HAVENMAIL_REPO_DIR. ---
+# shellcheck source=scripts/lib/common.sh
+source "${HAVENMAIL_REPO_DIR}/scripts/lib/common.sh"
+# shellcheck source=scripts/lib/preflight.sh
+source "${HAVENMAIL_REPO_DIR}/scripts/lib/preflight.sh"
 # shellcheck source=scripts/lib/install_steps.sh
-source "${SCRIPT_DIR}/scripts/lib/install_steps.sh"
+source "${HAVENMAIL_REPO_DIR}/scripts/lib/install_steps.sh"
+
+echo "== Havenmail Installer =="
+echo
+
+havenmail_require_root
+havenmail_require_debian
+havenmail_check_arch
+havenmail_check_min_ram_mb 2048
+havenmail_check_min_disk_gb 20 /
+havenmail_check_ports_free 25 587 465 143 993 443
+echo
 
 # --- Konfigurationswerte einsammeln ---
 if [[ "$UNATTENDED" -eq 1 ]]; then

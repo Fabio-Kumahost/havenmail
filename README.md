@@ -2,7 +2,7 @@
 
 Havenmail ist eine eigenständig entwickelte, quelloffene Mailserver-Plattform für Debian 12/13. Sie orchestriert bewährte, aktiv gepflegte Mail-Engines (Postfix, Dovecot, Rspamd, ClamAV) über eine selbst entwickelte Control-Plane (Rust) mit REST-Admin-API und moderner Web-Oberfläche (React/TypeScript).
 
-> **Projektstatus: M5 von M6 abgeschlossen.** Installer, REST-Admin-API, CLI, Web-Oberfläche (inkl. System-Status und Audit-Log), Backup/Restore/Update/Deinstallation sind implementiert und per Docker-Debian-12-Simulation sowie einer echten VM-Erstinstallation end-to-end verifiziert (siehe [CHANGELOG.md](CHANGELOG.md) für Details und dabei gefundene/behobene Bugs). Offen: OpenAPI-Spezifikation, M6-Abnahmetests (Open-Relay-Test, Zustellungstests) — siehe [docs/architecture.md](docs/architecture.md) für den genauen Stand je Meilenstein.
+> **Projektstatus: M5 von M6 abgeschlossen.** Installer, REST-Admin-API ([OpenAPI-Spezifikation](docs/openapi.yaml)), CLI, Web-Oberfläche (inkl. System-Status und Audit-Log), Backup/Restore/Update/Deinstallation sind implementiert und per Docker-Debian-12-Simulation sowie einer echten VM-Erstinstallation end-to-end verifiziert (siehe [CHANGELOG.md](CHANGELOG.md) für Details und dabei gefundene/behobene Bugs). Offen: M6-Abnahmetests (Open-Relay-Test, Zustellungstests) — siehe [docs/architecture.md](docs/architecture.md) für den genauen Stand je Meilenstein.
 
 ## Warum Havenmail
 

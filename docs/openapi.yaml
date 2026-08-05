@@ -1,0 +1,640 @@
+openapi: 3.0.3
+info:
+  title: Havenmail Control-Plane API
+  description: >
+    REST-Admin-API der Havenmail-Control-Plane. Verwaltet Domains, Benutzer,
+    Aliase, Verteiler, Weiterleitungen, DKIM/DNS und liefert System-Status
+    sowie ein manipulationssicheres Audit-Log. Schreibt keine SMTP-/IMAP-
+    Protokolllogik — orchestriert nur Postfix/Dovecot/Rspamd/ClamAV über
+    Konfigurationsrendering und Datenbank-Views.
+  version: "0.1.0"
+  license:
+    name: AGPL-3.0-or-later
+    url: https://www.gnu.org/licenses/agpl-3.0.html
+servers:
+  - url: https://{host}
+    variables:
+      host:
+        default: mail.example.org
+        description: Mail-Hostname der jeweiligen Installation
+
+security:
+  - bearerAuth: []
+
+paths:
+  /healthz:
+    get:
+      summary: Liveness-Probe
+      security: []
+      tags: [System]
+      responses:
+        "200":
+          description: Prozess läuft
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+
+  /readyz:
+    get:
+      summary: Readiness-Probe (prüft DB-Verbindung)
+      security: []
+      tags: [System]
+      responses:
+        "200":
+          description: Bereitschaftsstatus
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ready, not_ready] }
+                  checks:
+                    type: object
+                    properties:
+                      database: { type: boolean }
+
+  /api/v1/auth/login:
+    post:
+      summary: Anmelden
+      security: []
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200":
+          description: Zugangstoken
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenResponse" }
+        "401":
+          description: Ungültige Zugangsdaten
+        "429":
+          description: Zu viele fehlgeschlagene Versuche (Rate-Limit)
+
+  /api/v1/auth/refresh:
+    post:
+      summary: Access-Token per Refresh-Token erneuern
+      security: []
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string }
+      responses:
+        "200":
+          description: Neues Token-Paar (rotierender Refresh-Token)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TokenResponse" }
+        "401":
+          description: Refresh-Token ungültig/widerrufen
+
+  /api/v1/auth/logout:
+    post:
+      summary: Refresh-Token widerrufen
+      tags: [Auth]
+      responses:
+        "200":
+          description: Abgemeldet
+
+  /api/v1/domains:
+    get:
+      summary: Domains auflisten (super_admin alle, sonst nur eigene)
+      tags: [Domains]
+      responses:
+        "200":
+          description: Liste der Domains
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Domain" }
+    post:
+      summary: Domain anlegen (nur super_admin)
+      tags: [Domains]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                quota_bytes: { type: integer, nullable: true }
+      responses:
+        "200":
+          description: Angelegte Domain
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Domain" }
+        "409":
+          description: Domain existiert bereits
+
+  /api/v1/domains/{domain_id}:
+    parameters:
+      - $ref: "#/components/parameters/DomainId"
+    get:
+      summary: Domain abrufen
+      tags: [Domains]
+      responses:
+        "200":
+          description: Domain
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Domain" }
+        "404": { description: Nicht gefunden oder kein Zugriff }
+    patch:
+      summary: Domain aktualisieren
+      tags: [Domains]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                is_active: { type: boolean }
+                catch_all_enabled: { type: boolean }
+                catch_all_target: { type: string, nullable: true }
+                quota_bytes: { type: integer, nullable: true }
+      responses:
+        "200":
+          description: Aktualisierte Domain
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Domain" }
+    delete:
+      summary: Domain löschen (nur super_admin, kaskadiert)
+      tags: [Domains]
+      responses:
+        "200": { description: Gelöscht }
+
+  /api/v1/domains/{domain_id}/users:
+    parameters:
+      - $ref: "#/components/parameters/DomainId"
+    get:
+      summary: Benutzer einer Domain auflisten
+      tags: [Users]
+      responses:
+        "200":
+          description: Liste der Benutzer
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/User" }
+    post:
+      summary: Benutzer anlegen
+      tags: [Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [local_part, password]
+              properties:
+                local_part: { type: string }
+                password: { type: string, minLength: 12 }
+                role: { type: string, enum: [super_admin, domain_admin, user], default: user }
+                quota_bytes: { type: integer, nullable: true }
+      responses:
+        "200":
+          description: Angelegter Benutzer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+
+  /api/v1/users/{user_id}:
+    parameters:
+      - $ref: "#/components/parameters/UserId"
+    get:
+      summary: Benutzer abrufen (selbst oder Domain-Verwalter)
+      tags: [Users]
+      responses:
+        "200":
+          description: Benutzer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+    patch:
+      summary: Benutzer aktualisieren (Passwort selbst, Status/Quota nur Domain-Verwalter)
+      tags: [Users]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password: { type: string, minLength: 12 }
+                is_active: { type: boolean }
+                quota_bytes: { type: integer, nullable: true }
+      responses:
+        "200":
+          description: Aktualisierter Benutzer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+    delete:
+      summary: Benutzer löschen
+      tags: [Users]
+      responses:
+        "200": { description: Gelöscht }
+
+  /api/v1/domains/{domain_id}/aliases:
+    parameters:
+      - $ref: "#/components/parameters/DomainId"
+    get:
+      summary: Aliase einer Domain auflisten
+      tags: [Aliases]
+      responses:
+        "200":
+          description: Liste der Aliase
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Alias" }
+    post:
+      summary: Alias anlegen
+      tags: [Aliases]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source, destinations]
+              properties:
+                source: { type: string }
+                destinations:
+                  type: array
+                  items: { type: string }
+                  minItems: 1
+      responses:
+        "200":
+          description: Angelegter Alias
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Alias" }
+
+  /api/v1/aliases/{alias_id}:
+    parameters:
+      - name: alias_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      summary: Alias löschen
+      tags: [Aliases]
+      responses:
+        "200": { description: Gelöscht }
+
+  /api/v1/domains/{domain_id}/distribution-lists:
+    parameters:
+      - $ref: "#/components/parameters/DomainId"
+    get:
+      summary: Verteiler einer Domain auflisten
+      tags: [Distribution Lists]
+      responses:
+        "200":
+          description: Liste der Verteiler
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DistributionList" }
+    post:
+      summary: Verteiler anlegen
+      tags: [Distribution Lists]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address, members]
+              properties:
+                address: { type: string }
+                members:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200":
+          description: Angelegter Verteiler
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DistributionList" }
+
+  /api/v1/distribution-lists/{list_id}:
+    parameters:
+      - name: list_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      summary: Verteiler löschen
+      tags: [Distribution Lists]
+      responses:
+        "200": { description: Gelöscht }
+
+  /api/v1/users/{user_id}/forwards:
+    parameters:
+      - $ref: "#/components/parameters/UserId"
+    get:
+      summary: Weiterleitungen eines Benutzers auflisten
+      tags: [Forwards]
+      responses:
+        "200":
+          description: Liste der Weiterleitungen
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Forward" }
+    post:
+      summary: Weiterleitung anlegen (mit Mail-Loop-Schutz)
+      tags: [Forwards]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_address]
+              properties:
+                target_address: { type: string, format: email }
+                keep_copy: { type: boolean, default: true }
+      responses:
+        "200":
+          description: Angelegte Weiterleitung
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Forward" }
+        "409":
+          description: Würde eine Mail-Schleife erzeugen
+
+  /api/v1/forwards/{forward_id}:
+    parameters:
+      - name: forward_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      summary: Weiterleitung löschen
+      tags: [Forwards]
+      responses:
+        "200": { description: Gelöscht }
+
+  /api/v1/domains/{domain_id}/dkim:
+    parameters:
+      - $ref: "#/components/parameters/DomainId"
+    post:
+      summary: DKIM-Schlüssel erzeugen/erneuern
+      tags: [DNS]
+      responses:
+        "200":
+          description: Öffentlicher DKIM-Eintrag (privater Schlüssel wird nie zurückgegeben)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DkimKeyResponse" }
+
+  /api/v1/domains/{domain_id}/dns-recommendations:
+    parameters:
+      - $ref: "#/components/parameters/DomainId"
+    get:
+      summary: Empfohlene DNS-Einträge (MX/SPF/DKIM/DMARC) mit echten Werten
+      tags: [DNS]
+      responses:
+        "200":
+          description: DNS-Empfehlungen
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DnsRecommendations" }
+
+  /api/v1/domains/{domain_id}/dns-check:
+    parameters:
+      - $ref: "#/components/parameters/DomainId"
+    post:
+      summary: Live-DNS-Prüfung der Domain durchführen
+      tags: [DNS]
+      responses:
+        "200":
+          description: Prüfergebnisse
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items: { $ref: "#/components/schemas/DnsCheckResult" }
+
+  /api/v1/system/status:
+    get:
+      summary: System-/Dienststatus (nur super_admin)
+      tags: [System]
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SystemStatus" }
+        "403": { description: Keine Berechtigung }
+
+  /api/v1/audit-log:
+    get:
+      summary: Audit-Log lesen (super_admin alles, domain_admin nur eigene Domain)
+      tags: [Audit]
+      parameters:
+        - name: domain_id
+          in: query
+          schema: { type: string, format: uuid }
+          description: Nur für super_admin wirksam; domain_admin ist zwingend auf die eigene Domain beschränkt
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        "200":
+          description: Audit-Log-Einträge, neueste zuerst
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/AuditLogEntry" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    DomainId:
+      name: domain_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UserId:
+      name: user_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  schemas:
+    TokenResponse:
+      type: object
+      properties:
+        access_token: { type: string }
+        refresh_token: { type: string }
+        token_type: { type: string, example: Bearer }
+        expires_in: { type: integer, description: Sekunden bis Ablauf des Access-Tokens }
+
+    Domain:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        is_active: { type: boolean }
+        catch_all_enabled: { type: boolean }
+        catch_all_target: { type: string, nullable: true }
+        quota_bytes: { type: integer, nullable: true }
+        created_at: { type: string, format: date-time }
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        domain_id: { type: string, format: uuid }
+        local_part: { type: string }
+        role: { type: string, enum: [super_admin, domain_admin, user] }
+        quota_bytes: { type: integer, nullable: true }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    Alias:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        domain_id: { type: string, format: uuid }
+        source: { type: string }
+        destinations:
+          type: array
+          items: { type: string }
+        is_active: { type: boolean }
+
+    DistributionList:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        domain_id: { type: string, format: uuid }
+        address: { type: string }
+        members:
+          type: array
+          items: { type: string }
+
+    Forward:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        target_address: { type: string }
+        keep_copy: { type: boolean }
+        is_active: { type: boolean }
+
+    DkimKeyResponse:
+      type: object
+      properties:
+        selector: { type: string }
+        dns_record_name: { type: string }
+        dns_record_value: { type: string }
+
+    DnsEntry:
+      type: object
+      properties:
+        record_type: { type: string }
+        name: { type: string }
+        value: { type: string }
+
+    DnsRecommendations:
+      type: object
+      properties:
+        mx: { $ref: "#/components/schemas/DnsEntry" }
+        spf: { $ref: "#/components/schemas/DnsEntry" }
+        dkim:
+          allOf: [{ $ref: "#/components/schemas/DnsEntry" }]
+          nullable: true
+        dmarc: { $ref: "#/components/schemas/DnsEntry" }
+
+    DnsCheckResult:
+      type: object
+      properties:
+        record_type: { type: string }
+        expected: { type: string }
+        actual: { type: string, nullable: true }
+        status: { type: string, enum: [ok, missing, mismatch] }
+
+    ServiceStatus:
+      type: object
+      properties:
+        unit: { type: string }
+        active: { type: boolean }
+        detail: { type: string }
+
+    TlsStatus:
+      type: object
+      properties:
+        expires_at: { type: string, description: "Rohes openssl -enddate-Format" }
+        days_remaining: { type: integer, nullable: true }
+
+    SystemStatus:
+      type: object
+      properties:
+        database: { type: boolean }
+        services:
+          type: array
+          items: { $ref: "#/components/schemas/ServiceStatus" }
+        tls:
+          allOf: [{ $ref: "#/components/schemas/TlsStatus" }]
+          nullable: true
+
+    AuditLogEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        actor_id: { type: string, format: uuid, nullable: true }
+        action: { type: string, example: domain.create }
+        target: { type: string }
+        domain_id: { type: string, format: uuid, nullable: true }
+        before: { nullable: true }
+        after: { nullable: true }
+        ip: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+
+tags:
+  - name: Auth
+  - name: Domains
+  - name: Users
+  - name: Aliases
+  - name: Distribution Lists
+  - name: Forwards
+  - name: DNS
+  - name: System
+  - name: Audit
