@@ -3,3 +3,13 @@ mail_location = maildir:/var/mail/havenmail/%d/%n
 mail_privileged_group = mail
 first_valid_uid = 5000
 first_valid_gid = 5000
+
+# 15-mailboxes.conf (Debian-Paket-Default) setzt Sent/Trash/Junk/Drafts
+# Sonderordner in einer "namespace inbox { ... }"-Sektion voraus, die dort
+# selbst nicht definiert wird ("Assumes 'namespace inbox' has been defined
+# in 10-mail.conf" laut Kommentar dort). Ohne inbox=yes hier bricht jedes
+# IMAP-Login mit "namespace configuration error: inbox=yes namespace
+# missing" ab.
+namespace inbox {
+  inbox = yes
+}

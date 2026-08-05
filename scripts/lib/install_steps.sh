@@ -253,6 +253,69 @@ havenmail_render_configs() {
     ' "$ssl_conf" > "$compat_conf"
     mv "$compat_conf" "$ssl_conf"
   fi
+
+  # Nichts bindet dovecot-sql.conf.ext bisher tatsächlich in Dovecots
+  # Auth-Kette ein — 10-auth.conf ist Debians unveränderter Paket-Default
+  # und lädt dort nur auth-system.conf.ext (PAM). Ohne diesen Schritt
+  # scheitert *jeder* IMAP-/SMTP-Login mit "user unknown" gegen PAM,
+  # weil virtuelle Havenmail-Postfächer keine Systembenutzer sind (real
+  # bei einer Erstinstallation beobachtet: Dovecot startete sauber, aber
+  # kein einziges Postfach konnte sich anmelden). Verbindungsdaten aus
+  # der bereits gerenderten dovecot-sql.conf.ext ableiten statt sie hier
+  # erneut zu templaten.
+  local sql_ext="${HAVENMAIL_RENDER_DIR}/dovecot/dovecot-sql.conf.ext"
+  local db_connect db_host db_port db_name db_user db_pass
+  db_connect="$(grep '^connect = ' "$sql_ext" | sed 's/^connect = //')"
+  db_host="$(grep -o 'host=[^ ]*' <<<"$db_connect" | cut -d= -f2)"
+  db_port="$(grep -o 'port=[^ ]*' <<<"$db_connect" | cut -d= -f2)"
+  db_name="$(grep -o 'dbname=[^ ]*' <<<"$db_connect" | cut -d= -f2)"
+  db_user="$(grep -o 'user=[^ ]*' <<<"$db_connect" | cut -d= -f2)"
+  db_pass="$(grep -o 'password=.*' <<<"$db_connect" | cut -d= -f2-)"
+
+  local auth_sql_conf="${HAVENMAIL_RENDER_DIR}/dovecot/10-auth-sql.conf"
+  if [[ "$dovecot_version" == 2.4* ]]; then
+    # Dovecot 2.4 löste das alte "passdb sql { args = <file> }"-Muster
+    # durch ein verschachteltes, benanntes Settings-Schema ab (per
+    # doveconf -d ermittelt: passdb_sql_query, sql_driver, pgsql_* —
+    # nicht dokumentiert unter dem alten dovecot-sql.conf.ext-Format).
+    cat > "$auth_sql_conf" <<EOF
+sql_driver = pgsql
+pgsql pgsql {
+  host = ${db_host}
+  parameters {
+    port = ${db_port}
+    dbname = ${db_name}
+    user = ${db_user}
+    password = ${db_pass}
+  }
+}
+
+passdb sql {
+  passdb_sql_query = SELECT username AS user, password FROM dovecot_auth_users WHERE username = '%{user}' AND active
+  passdb_default_password_scheme = ARGON2ID
+}
+
+userdb sql {
+  userdb_sql_query = SELECT '/var/mail/havenmail/%{user|domain}/%{user|username}' AS home, 'maildir:/var/mail/havenmail/%{user|domain}/%{user|username}' AS mail, 5000 AS uid, 5000 AS gid, quota_bytes AS quota_rule FROM dovecot_auth_users WHERE username = '%{user}' AND active
+  userdb_sql_iterate_query = SELECT username AS user FROM dovecot_auth_users WHERE active
+}
+EOF
+  else
+    # Dovecot 2.3 (Debian 12): klassische datei-referenzierte Syntax.
+    # Unverändert seit vielen Dovecot-Versionen dokumentiert — im
+    # Gegensatz zum 2.4-Zweig oben aber nicht auf einem echten
+    # Debian-12-Host verifiziert, da diese Installation auf 2.4 lief.
+    cat > "$auth_sql_conf" <<'EOF'
+passdb {
+  driver = sql
+  args = /etc/dovecot/dovecot-sql.conf.ext
+}
+userdb {
+  driver = sql
+  args = /etc/dovecot/dovecot-sql.conf.ext
+}
+EOF
+  fi
 }
 
 # Kopiert die gerenderte Postfix-/Dovecot-/Rspamd-/Fail2ban-Konfiguration an
@@ -274,6 +337,12 @@ havenmail_deploy_mail_configs() {
   install -m 0644 "${render_dir}/dovecot/10-master.conf" /etc/dovecot/conf.d/10-master.conf
   install -m 0644 "${render_dir}/dovecot/10-ssl.conf" /etc/dovecot/conf.d/10-ssl.conf
   install -m 0640 -o root -g dovecot "${render_dir}/dovecot/dovecot-sql.conf.ext" /etc/dovecot/dovecot-sql.conf.ext
+  install -m 0640 -o root -g dovecot "${render_dir}/dovecot/10-auth-sql.conf" /etc/dovecot/conf.d/10-auth-sql.conf
+  # Debians dovecot-core-Paket aktiviert per Default PAM-Auth
+  # (auth-system.conf.ext) — virtuelle Havenmail-Postfächer sind keine
+  # Systembenutzer, PAM muss also weichen, sonst schlägt jeder Login fehl.
+  sed -i 's/^!include auth-system\.conf\.ext/#!include auth-system.conf.ext/' \
+    /etc/dovecot/conf.d/10-auth.conf
 
   install -d -m 0755 /etc/rspamd/local.d
   install -m 0644 "${render_dir}/rspamd/local.d/antivirus.conf" /etc/rspamd/local.d/antivirus.conf
