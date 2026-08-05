@@ -109,11 +109,17 @@ echo
 
 havenmail_ensure_system_user
 havenmail_ensure_dirs
-havenmail_write_env_file "$HAVENMAIL_DOMAIN" "$HAVENMAIL_HOSTNAME" "$HAVENMAIL_ADMIN_EMAIL" "$HAVENMAIL_TIMEZONE"
 
+# Pakete VOR der Env-Datei: havenmail_write_env_file generiert Secrets über
+# `openssl` (common.sh, havenmail_random_secret/havenmail_random_key_hex32)
+# — auf einem frischen Minimal-Debian ist openssl nicht garantiert
+# vorinstalliert (in einem Debian-12-Testcontainer ohne Vorinstallation
+# schlug genau das fehl: "openssl: command not found").
 havenmail_apt_packages
 havenmail_install_rust_toolchain
 havenmail_install_node
+
+havenmail_write_env_file "$HAVENMAIL_DOMAIN" "$HAVENMAIL_HOSTNAME" "$HAVENMAIL_ADMIN_EMAIL" "$HAVENMAIL_TIMEZONE"
 
 havenmail_configure_postgres
 

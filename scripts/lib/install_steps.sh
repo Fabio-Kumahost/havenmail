@@ -24,11 +24,11 @@ havenmail_apt_packages() {
     clamav-daemon
     nginx
     certbot
-    python3-certbot-nginx
     fail2ban
     ufw
     git
     curl
+    openssl
     build-essential
     pkg-config
     libssl-dev
@@ -48,22 +48,28 @@ havenmail_install_rust_toolchain() {
     return 0
   fi
   havenmail_log "Installiere Rust-Toolchain (rustup, nur für den Build benötigt)…"
-  export RUSTUP_HOME=/opt/rustup
-  export CARGO_HOME=/opt/cargo
+  # RUSTUP_HOME/CARGO_HOME sind bereits durch common.sh exportiert (dort
+  # auch die Begründung, warum das dort und nicht nur hier passiert).
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
     sh -s -- -y --profile minimal --default-toolchain stable
-  # shellcheck disable=SC1091
-  . /opt/cargo/env
-  ln -sf /opt/cargo/bin/cargo /usr/local/bin/cargo
-  ln -sf /opt/cargo/bin/rustc /usr/local/bin/rustc
+  ln -sf "${CARGO_HOME}/bin/cargo" /usr/local/bin/cargo
+  ln -sf "${CARGO_HOME}/bin/rustc" /usr/local/bin/rustc
 }
 
 havenmail_install_node() {
-  if command -v node >/dev/null 2>&1; then
+  # Debians eigenes nodejs-Paket (Bookworm: v18) ist zu alt für den
+  # Vite/Rolldown-basierten Frontend-Build (braucht Node >= 20 — in einem
+  # Debian-12-Testcontainer schlug der Build mit v18 real fehl: "node:util
+  # does not provide an export named 'styleText'"). Debians Paket bringt
+  # zudem hunderte transitive node-*-Systempakete mit und ist entsprechend
+  # langsam zu installieren. Deshalb NodeSource statt apt.
+  if command -v node >/dev/null 2>&1 && \
+     [[ "$(node -e 'console.log(process.versions.node.split(".")[0])')" -ge 20 ]]; then
     return 0
   fi
-  havenmail_log "Installiere Node.js (nur für den Frontend-Build benötigt)…"
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs npm
+  havenmail_log "Installiere Node.js 22.x LTS (NodeSource, nur für den Frontend-Build benötigt)…"
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash - >/dev/null
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs
 }
 
 havenmail_fetch_source() {
@@ -81,8 +87,6 @@ havenmail_fetch_source() {
 
 havenmail_build_backend() {
   havenmail_log "Baue Control-Plane (Rust, Release-Profil — kann einige Minuten dauern)…"
-  # shellcheck disable=SC1091
-  [[ -f /opt/cargo/env ]] && . /opt/cargo/env
   ( cd "${HAVENMAIL_REPO_DIR}/backend" && cargo build --release --quiet )
 }
 
@@ -144,7 +148,12 @@ havenmail_configure_postgres() {
   local db_password
   db_password="$(havenmail_env_get HAVENMAIL_DB_PASSWORD)"
   havenmail_log "Richte PostgreSQL-Rolle und Datenbank ein (idempotent)…"
-  sudo -u postgres psql -v ON_ERROR_STOP=1 --quiet <<SQL
+  # runuser statt sudo -u: sudo ist auf einem frischen Minimal-Debian nicht
+  # zwingend vorinstalliert (in einem Debian-12-Testcontainer schlug genau
+  # das fehl: "sudo: command not found"); runuser gehört zu util-linux
+  # (essential-Paket, immer vorhanden) und install.sh läuft ohnehin bereits
+  # als root, braucht also keinen Privilegien-Aufstieg über sudo.
+  runuser -u postgres -- psql -v ON_ERROR_STOP=1 --quiet <<SQL
 DO \$\$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'havenmail') THEN
@@ -155,9 +164,9 @@ BEGIN
 END
 \$\$;
 SQL
-  sudo -u postgres psql -v ON_ERROR_STOP=1 --quiet -tc \
+  runuser -u postgres -- psql -v ON_ERROR_STOP=1 --quiet -tc \
     "SELECT 1 FROM pg_database WHERE datname = 'havenmail'" | grep -q 1 || \
-    sudo -u postgres createdb --owner=havenmail havenmail
+    runuser -u postgres -- createdb --owner=havenmail havenmail
 }
 
 # Zentraler Render-Pfad für alle Templates (Postfix/Dovecot/Rspamd/
@@ -345,10 +354,29 @@ havenmail_install_systemd_units() {
   systemctl enable --quiet havenmail-api.service
 }
 
+# ClamAV startet nicht, solange keine Signaturdatenbank vorhanden ist
+# (systemd-Bedingung `ConditionPathExistsGlob=/var/lib/clamav/daily.{cvd,cld}`
+# auf clamav-daemon.service, real in einem Debian-12-Testcontainer
+# beobachtet: der Dienst wurde stillschweigend übersprungen). `freshclam`
+# einmalig blockierend laufen lassen, bevor der Daemon gestartet wird;
+# clamav-freshclam.service danach aktivieren für künftige automatische
+# Updates (läuft per Timer/Daemon-Modus weiter).
+havenmail_provision_clamav() {
+  if [[ ! -f /var/lib/clamav/daily.cvd && ! -f /var/lib/clamav/daily.cld ]]; then
+    havenmail_log "Lade ClamAV-Signaturdatenbank (freshclam, einmalig — kann einige Minuten dauern)…"
+    freshclam --quiet || havenmail_err "freshclam fehlgeschlagen — clamav-daemon startet ggf. nicht. Manuell prüfen: freshclam -v"
+  fi
+  systemctl enable --quiet clamav-freshclam.service 2>/dev/null || true
+  systemctl restart clamav-freshclam.service 2>/dev/null || true
+}
+
 havenmail_start_services() {
+  havenmail_provision_clamav
+
   havenmail_log "Starte Havenmail-Dienste…"
   systemctl restart havenmail-api.service
-  systemctl restart postfix dovecot rspamd clamav-daemon nginx
+  systemctl enable --quiet fail2ban postfix dovecot rspamd clamav-daemon nginx 2>/dev/null || true
+  systemctl restart postfix dovecot rspamd clamav-daemon nginx fail2ban
 
   sleep 2
   if ! systemctl is-active --quiet havenmail-api.service; then

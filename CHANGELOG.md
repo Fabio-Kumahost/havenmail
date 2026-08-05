@@ -4,6 +4,17 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/), Ve
 
 ## [Unreleased]
 
+### Behoben — durch echten Installer-Testlauf in einer Debian-12-Container-Umgebung mit systemd gefunden
+`install.sh` wurde erstmals nicht nur gegen Syntax/Einzelbausteine, sondern als vollständiger Ablauf in einer möglichst realitätsnahen Debian-12-Umgebung (systemd als PID 1, echte apt-Pakete, echter Build) durchgespielt — dabei kamen sechs reale Bugs zum Vorschein, die auf einem frischen Server genauso aufgetreten wären:
+- `openssl` ist auf einem Minimal-Debian nicht garantiert vorinstalliert, wurde aber schon vor der Paketinstallation für die Secret-Generierung gebraucht → `install.sh` installiert Pakete jetzt vor dem Schreiben der Env-Datei; `openssl` zusätzlich explizit im Paketbedarf
+- `sudo` ist auf einem Minimal-Debian ebenfalls nicht vorinstalliert → alle `sudo -u postgres`-Aufrufe (`install_steps.sh`, `uninstall.sh`) durch `runuser -u postgres --` ersetzt (util-linux, immer vorhanden; das Skript läuft ohnehin bereits als root)
+- `RUSTUP_HOME`/`CARGO_HOME` waren nur lokal in `havenmail_install_rust_toolchain` gesetzt — in einer neuen Shell (z. B. `update.sh`) fand der `cargo`-Symlink seine Toolchain nicht mehr ("no default is configured") → jetzt unbedingt in `common.sh` exportiert
+- Debians `nodejs`-apt-Paket (Bookworm: v18) ist zu alt für den Vite/Rolldown-Frontend-Build (braucht Node ≥ 20, real fehlgeschlagen mit `node:util does not provide an export named 'styleText'`) und zieht nebenbei hunderte transitive `node-*`-Pakete → `havenmail_install_node` nutzt jetzt NodeSource (Node 22.x LTS)
+- `clamav-daemon` startet nicht, solange keine Signaturdatenbank existiert (`ConditionPathExistsGlob` auf `/var/lib/clamav/daily.{cvd,cld}`) → neue Funktion `havenmail_provision_clamav` lädt die Datenbank einmalig per `freshclam`, bevor der Dienst gestartet wird, und aktiviert `clamav-freshclam.service` für künftige Updates
+- `fail2ban` wurde installiert, aber nie gestartet/aktiviert → jetzt explizit in `havenmail_start_services` enthalten
+
+Nach diesen Fixes lief der komplette Installer-Ablauf (Pakete → Build → Config-Rendering → nginx-Bootstrap → TLS → Mail-Configs → systemd → Health-Check → Admin-Bootstrap) erfolgreich durch, inklusive erfolgreichem Login über die echte, per Installer aufgesetzte API und korrekt befülltem System-Status-Endpunkt (alle Dienste `active`, TLS-Ablaufdatum korrekt berechnet). TLS-Ausstellung war dabei simuliert (selbstsigniertes Zertifikat statt echtem Let's-Encrypt-Lauf, da der Testcontainer keine öffentliche IP/kein Reverse-DNS hat) — das ist weiterhin ungetestet und der nächste Schritt auf einer echten VM.
+
 ### Hinzugefügt (M5: Installer & Betrieb)
 - `install.sh` implementiert vollständig: Preflight, Self-Bootstrap (Single-File-curl vs. bestehendes Checkout), Systembenutzer/-verzeichnisse, apt-Pakete, Rust-/Node-Toolchain-Install, PostgreSQL-Rolle/DB, zweiphasiger nginx-/TLS-Rollout (Übergangs-vhost → certbot Webroot → voller HTTPS-Vhost), Backend-/Frontend-Build, Deployment der gerenderten Postfix-/Dovecot-/Rspamd-/Fail2ban-/nginx-Konfiguration an ihre Systempfade, Firewall (ufw), systemd-Unit, Dienststart, Health-Check
 - `config/nginx/havenmail-http.conf.tera` (Übergangs-vhost für die ACME-Challenge) und `havenmail.conf.tera` (voller HTTPS-Vhost: reverse-proxied `/api/`, `/healthz`, `/readyz` zur Control-Plane, liefert den Frontend-Build mit SPA-Fallback aus). Frontend wird mit `VITE_HAVENMAIL_API_URL=""` gebaut — same-origin, kein CORS nötig
@@ -22,7 +33,8 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/), Ve
 - TLS-Zertifikatslaufzeit im System-Status: certbot-Deploy-Hook (`havenmail_install_tls_expiry_hook`) schreibt bei jeder Ausstellung/Erneuerung nur das Ablaufdatum nach `/etc/havenmail/tls-expiry` (0644) — die API braucht dafür keinen Lesezugriff auf `/etc/letsencrypt` (bleibt root:root 0700, enthält den privaten Schlüssel)
 
 ### Bekannt / Noch ausstehend (nach M5)
-- Kein End-to-End-Test des gesamten Installer-/Update-/Backup-Ablaufs auf einer frischen Debian-VM (nur einzelne Bausteine lokal gegen Dev-Postgres verifiziert, nginx-Konfiguration nur manuell geprüft — kein nginx auf der Entwicklungsmaschine verfügbar)
+- Vollständiger Installer-Durchlauf in einer Debian-12-Container-Simulation (systemd, echte Pakete) erfolgreich — echte VM mit öffentlicher IP/DNS für echtes Let's-Encrypt sowie `update.sh`/`backup.sh`/`restore.sh`/`uninstall.sh` end-to-end noch nicht getestet
+- `fail2ban` schlug im Testcontainer beim Start fehl ("Have not found any log file for sshd jail" — die Default-`sshd`-Jail erwartet `/var/log/auth.log`, das im minimalen Container ohne rsyslog/SSH-Server fehlt). Vermutlich Container-Artefakt, auf einer echten VM mit laufendem SSH-Dienst noch zu verifizieren
 - Repo ist noch nicht auf GitHub veröffentlicht — der dokumentierte Single-File-curl-Einzeiler funktioniert erst danach (`HAVENMAIL_SOURCE_REPO`/`USERNAME`-Platzhalter)
 - `update.sh --major`-Versionsvergleich ist rein heuristisch (String-Vergleich von `vX`-Tags), keine echte Signatur-/Release-Prüfung
 - Backup: kein S3-Ziel, keine gestaffelte Retention, kein automatisierter Sandbox-Restore-Test, kein Einzel-Domain-Restore

@@ -13,6 +13,18 @@ HAVENMAIL_REPO_DIR="${HAVENMAIL_REPO_DIR:-/opt/havenmail}"
 HAVENMAIL_SYSTEM_USER="${HAVENMAIL_SYSTEM_USER:-havenmail}"
 HAVENMAIL_SOURCE_REPO="${HAVENMAIL_SOURCE_REPO:-https://github.com/USERNAME/havenmail.git}"
 
+# Rust-Toolchain-Pfade IMMER exportieren, nicht nur innerhalb von
+# havenmail_install_rust_toolchain: rustups cargo-Shim (verlinkt nach
+# /usr/local/bin, siehe dort) braucht RUSTUP_HOME/CARGO_HOME in JEDEM
+# Prozess, der cargo aufruft — nicht nur in dem, der die Toolchain
+# ursprünglich installiert hat. Ohne dies schlägt z. B. `update.sh` in einer
+# neuen Shell fehl, obwohl `command -v cargo` erfolgreich ist: "rustup could
+# not choose a version of cargo to run, ... no default is configured"
+# (in einem Debian-12-Testcontainer real aufgetreten).
+export RUSTUP_HOME="${RUSTUP_HOME:-/opt/rustup}"
+export CARGO_HOME="${CARGO_HOME:-/opt/cargo}"
+export PATH="${CARGO_HOME}/bin:${PATH}"
+
 havenmail_log() {
   echo "[havenmail] $*"
 }

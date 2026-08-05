@@ -74,8 +74,8 @@ havenmail_err "Postfix/Dovecot laufen jetzt ohne die entfernte Konfiguration wei
 
 if [[ "$PURGE_DATA" -eq 1 ]]; then
   havenmail_log "Lösche Datenbank und Nutzdaten (--purge-data)…"
-  sudo -u postgres dropdb --if-exists havenmail
-  sudo -u postgres psql -v ON_ERROR_STOP=1 --quiet -c "DROP ROLE IF EXISTS havenmail;" || true
+  runuser -u postgres -- dropdb --if-exists havenmail
+  runuser -u postgres -- psql -v ON_ERROR_STOP=1 --quiet -c "DROP ROLE IF EXISTS havenmail;" || true
   rm -rf "$HAVENMAIL_ETC_DIR" "$HAVENMAIL_STATE_DIR" "$HAVENMAIL_MAIL_DIR" "$HAVENMAIL_LOG_DIR"
   id "$HAVENMAIL_SYSTEM_USER" >/dev/null 2>&1 && userdel "$HAVENMAIL_SYSTEM_USER" 2>/dev/null || true
   havenmail_log "Nutzdaten gelöscht."
