@@ -1,0 +1,65 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+# Liefert das gebaute Admin-Frontend statisch aus und reverse-proxied die
+# REST-API sowie die Health-Endpunkte an die lokal gebundene Control-Plane
+# (siehe docs/architecture.md). Kein direkter Netzwerkzugriff auf die API
+# nötig — HAVENMAIL_API_BIND bleibt bewusst auf 127.0.0.1 (siehe
+# config/systemd/havenmail-api.service).
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ mail_hostname }};
+
+    # Bleibt für Zertifikatserneuerungen erhalten (certbot renew läuft im
+    # Webroot-Modus gegen das laufende nginx, kein Dienst-Stopp nötig).
+    location /.well-known/acme-challenge/ {
+        root /var/www/havenmail-acme;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    # Alte "listen ... http2"-Syntax statt "http2 on;" (erst ab nginx
+    # 1.25.1) — Debian 12 (bookworm) liefert nginx 1.22 aus, siehe
+    # docs/architecture.md (unterstützte Debian-Versionen).
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name {{ mail_hostname }};
+
+    ssl_certificate {{ tls_cert_path }};
+    ssl_certificate_key {{ tls_key_path }};
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    add_header Strict-Transport-Security "max-age=63072000" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+
+    location /api/ {
+        proxy_pass http://{{ api_bind }};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location = /healthz {
+        proxy_pass http://{{ api_bind }}/healthz;
+    }
+
+    location = /readyz {
+        proxy_pass http://{{ api_bind }}/readyz;
+    }
+
+    # Admin-Oberfläche (React-Router, Client-Side-Routing) — unbekannte
+    # Pfade fallen auf index.html zurück statt 404, damit Deep-Links
+    # (z. B. /domains/<id>) beim direkten Aufruf funktionieren.
+    root {{ frontend_dist_dir }};
+    index index.html;
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

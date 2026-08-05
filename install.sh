@@ -116,11 +116,22 @@ havenmail_install_rust_toolchain
 havenmail_install_node
 
 havenmail_configure_postgres
-havenmail_provision_tls "$HAVENMAIL_HOSTNAME" "$HAVENMAIL_ADMIN_EMAIL"
 
+# Build vor dem Config-Rendering: render-configs/bootstrap-admin sind
+# CLI-Befehle aus dem gerade gebauten Binary, das Frontend muss existieren,
+# bevor nginx darauf als Root-Verzeichnis verweist.
 havenmail_build_backend
 havenmail_build_frontend
+havenmail_render_configs
+
+# TLS erst NACH einem laufenden, aber noch zertifikatslosen nginx (Port-80-
+# Übergangs-vhost) anfordern — siehe Kommentare in install_steps.sh für die
+# Begründung des zweiphasigen Rollouts.
+havenmail_deploy_nginx_bootstrap
+havenmail_provision_tls "$HAVENMAIL_HOSTNAME" "$HAVENMAIL_ADMIN_EMAIL"
+
 havenmail_deploy_mail_configs
+havenmail_deploy_nginx_full
 havenmail_configure_firewall
 
 havenmail_install_systemd_units
@@ -132,5 +143,5 @@ havenmail_bootstrap_admin "$HAVENMAIL_DOMAIN" "$ADMIN_LOCAL_PART"
 echo
 echo "== Installation abgeschlossen =="
 echo "DNS-Einträge gemäß docs/dns-setup.md setzen, dann Admin-Oberfläche"
-echo "unter https://${HAVENMAIL_HOSTNAME}/admin aufrufen."
+echo "unter https://${HAVENMAIL_HOSTNAME}/ aufrufen."
 echo "Erstzugangsdaten: ${HAVENMAIL_ETC_DIR}/initial-admin-credentials (nur root/${HAVENMAIL_SYSTEM_USER} lesbar)."

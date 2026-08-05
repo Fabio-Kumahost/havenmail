@@ -80,6 +80,10 @@ enum Command {
         tls_cert_path: String,
         #[arg(long, default_value = "/etc/havenmail/tls/privkey.pem")]
         tls_key_path: String,
+        #[arg(long, default_value = "/opt/havenmail/frontend/dist")]
+        frontend_dist_dir: String,
+        #[arg(long, env = "HAVENMAIL_API_BIND", default_value = "127.0.0.1:8080")]
+        api_bind: String,
     },
     /// Legt (idempotent) die erste Domain und deren `super_admin`-Konto an.
     /// Spricht direkt die Datenbank an, nicht die API — es gibt bewusst
@@ -187,6 +191,8 @@ async fn main() {
             db_password,
             tls_cert_path,
             tls_key_path,
+            frontend_dist_dir,
+            api_bind,
         } => render_configs(
             &config_dir,
             &out_dir,
@@ -199,6 +205,8 @@ async fn main() {
                 db_password,
                 tls_cert_path,
                 tls_key_path,
+                frontend_dist_dir,
+                api_bind,
             },
         )
         .map_err(|e| e.to_string()),

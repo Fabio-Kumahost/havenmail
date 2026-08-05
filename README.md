@@ -32,7 +32,7 @@ less install.sh
 sudo bash install.sh
 ```
 
-Der Installer existiert aktuell nur als dokumentiertes Gerüst (`install.sh`) und führt noch keine vollständige Installation durch — siehe [docs/installation.md](docs/installation.md) für den aktuellen Stand.
+`install.sh` ist vollständig implementiert; solange das Repo nicht auf GitHub veröffentlicht ist, funktioniert der obige Einzeiler noch nicht — siehe [docs/installation.md](docs/installation.md) für den heute funktionierenden Ablauf (Repo auf den Server kopieren, `sudo bash install.sh`) und den vollständigen Funktionsumfang.
 
 ## Repository-Struktur
 

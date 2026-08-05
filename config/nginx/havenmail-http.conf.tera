@@ -1,0 +1,23 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+# Übergangs-vhost (nur Port 80): wird installiert, BEVOR ein TLS-Zertifikat
+# existiert, damit certbot die ACME-HTTP-01-Challenge im Webroot-Modus über
+# ein bereits laufendes nginx abwickeln kann (siehe
+# scripts/lib/install_steps.sh, havenmail_deploy_nginx_bootstrap /
+# havenmail_provision_tls). Wird danach durch havenmail.conf (voller
+# HTTPS-Vhost) ersetzt und bleibt auch dort als Port-80-Block für
+# Zertifikatserneuerungen erhalten.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ mail_hostname }};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/havenmail-acme;
+    }
+
+    location / {
+        default_type text/plain;
+        return 200 "Havenmail wird eingerichtet — TLS-Zertifikat wird ausgestellt.\n";
+    }
+}

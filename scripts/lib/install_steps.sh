@@ -88,7 +88,12 @@ havenmail_build_backend() {
 
 havenmail_build_frontend() {
   havenmail_log "Baue Web-Oberfläche (npm run build)…"
-  ( cd "${HAVENMAIL_REPO_DIR}/frontend" && npm ci --silent && npm run build --silent )
+  # Leere VITE_HAVENMAIL_API_URL -> das Frontend spricht relative Pfade
+  # (/api/v1/...) an, die nginx same-origin zur Control-Plane proxied
+  # (siehe config/nginx/havenmail.conf.tera). Vermeidet CORS vollständig,
+  # statt eine Access-Control-Allow-Origin-Konfiguration pflegen zu müssen.
+  ( cd "${HAVENMAIL_REPO_DIR}/frontend" && npm ci --silent && \
+    VITE_HAVENMAIL_API_URL="" npm run build --silent )
 }
 
 havenmail_configure_firewall() {
@@ -155,26 +160,40 @@ SQL
     sudo -u postgres createdb --owner=havenmail havenmail
 }
 
-# Rendert die Postfix-/Dovecot-/Rspamd-Templates (config/*.tera) über die
-# havenmail-cli und kopiert sie an ihre echten Systempfade. Bewusst über die
+# Zentraler Render-Pfad für alle Templates (Postfix/Dovecot/Rspamd/
+# Fail2ban/nginx), einmal aufgerufen bevor die einzelnen deploy_*-Funktionen
+# die für sie relevanten Dateien an Systempfade kopieren. Bewusst über die
 # bereits getestete Rust-Rendering-Logik (M1/config_render), nicht per
 # sed/envsubst in Bash — vermeidet zwei parallele Template-Implementierungen.
-havenmail_deploy_mail_configs() {
-  local db_password mail_hostname render_dir="${HAVENMAIL_STATE_DIR}/rendered-config"
+# Bezieht den TLS-Zertifikatspfad rein textuell (die Datei muss beim
+# Rendern selbst noch nicht existieren, nur beim späteren nginx-Start mit
+# dem vollen HTTPS-Vhost, siehe havenmail_deploy_nginx_full).
+havenmail_render_configs() {
+  local db_password mail_hostname
   db_password="$(havenmail_env_get HAVENMAIL_DB_PASSWORD)"
   mail_hostname="$(havenmail_env_get HAVENMAIL_HOSTNAME)"
+  HAVENMAIL_RENDER_DIR="${HAVENMAIL_STATE_DIR}/rendered-config"
 
-  havenmail_log "Rendere Postfix-/Dovecot-/Rspamd-Konfiguration…"
-  rm -rf "$render_dir"
+  havenmail_log "Rendere Konfigurationstemplates (Postfix/Dovecot/Rspamd/Fail2ban/nginx)…"
+  rm -rf "$HAVENMAIL_RENDER_DIR"
   "${HAVENMAIL_REPO_DIR}/backend/target/release/havenmail-cli" render-configs \
     --config-dir "${HAVENMAIL_REPO_DIR}/config" \
-    --out-dir "$render_dir" \
+    --out-dir "$HAVENMAIL_RENDER_DIR" \
     --mail-hostname "$mail_hostname" \
     --db-password "$db_password" \
     --tls-cert-path "/etc/letsencrypt/live/${mail_hostname}/fullchain.pem" \
-    --tls-key-path "/etc/letsencrypt/live/${mail_hostname}/privkey.pem"
+    --tls-key-path "/etc/letsencrypt/live/${mail_hostname}/privkey.pem" \
+    --frontend-dist-dir "${HAVENMAIL_REPO_DIR}/frontend/dist" \
+    --api-bind "$(havenmail_env_get HAVENMAIL_API_BIND)"
+}
 
-  havenmail_log "Installiere gerenderte Konfiguration an Systempfade…"
+# Kopiert die gerenderte Postfix-/Dovecot-/Rspamd-/Fail2ban-Konfiguration an
+# ihre echten Systempfade. Setzt voraus, dass havenmail_render_configs
+# bereits gelaufen ist (HAVENMAIL_RENDER_DIR gesetzt).
+havenmail_deploy_mail_configs() {
+  local render_dir="$HAVENMAIL_RENDER_DIR"
+
+  havenmail_log "Installiere gerenderte Mail-Engine-Konfiguration an Systempfade…"
   install -d -m 0755 /etc/postfix/havenmail
   install -m 0644 "${render_dir}/postfix/main.cf" /etc/postfix/main.cf
   cat "${render_dir}/postfix/master.cf.append" >> /etc/postfix/master.cf
@@ -202,21 +221,46 @@ havenmail_deploy_mail_configs() {
   dovecot -n >/dev/null
 }
 
-# TLS über certbot im Standalone-Modus, nur wenn noch kein Zertifikat für
-# den Mail-Hostnamen existiert. Standalone statt --nginx-Plugin, weil noch
-# keine nginx-vhost-Konfiguration ausgerollt ist (TODO M5: nginx-Template
-# für die Admin-UI/Reverse-Proxy fehlt noch in config/, siehe
-# docs/architecture.md); Port 80 ist an dieser Stelle im Ablauf noch frei,
-# da nginx erst danach in havenmail_start_services gestartet wird.
-# Erneuerung übernimmt certbots eigener systemd-Timer aus dem Debian-Paket.
+# Installiert den Übergangs-vhost (nur Port 80) und startet/reloaded
+# nginx, damit certbot im Webroot-Modus die ACME-Challenge über ein
+# tatsächlich laufendes nginx beantworten kann (kein --standalone, das mit
+# einem später dauerhaft laufenden nginx um Port 80 konkurrieren würde).
+havenmail_deploy_nginx_bootstrap() {
+  install -d -m 0755 /var/www/havenmail-acme
+  install -d -m 0755 /etc/nginx/sites-available
+  install -m 0644 "${HAVENMAIL_RENDER_DIR}/nginx/havenmail-http.conf" \
+    /etc/nginx/sites-available/havenmail.conf
+  ln -sf /etc/nginx/sites-available/havenmail.conf /etc/nginx/sites-enabled/havenmail.conf
+  rm -f /etc/nginx/sites-enabled/default
+  nginx -t
+  systemctl enable --quiet nginx
+  systemctl restart nginx
+}
+
+# Ersetzt den Übergangs-vhost durch den vollen HTTPS-Vhost (Reverse-Proxy
+# zur API, statische Auslieferung des Frontend-Builds). Muss erst NACH
+# havenmail_provision_tls laufen, da die ssl_certificate-Direktiven auf
+# existierende Dateien zeigen müssen, sonst schlägt `nginx -t` fehl.
+havenmail_deploy_nginx_full() {
+  install -m 0644 "${HAVENMAIL_RENDER_DIR}/nginx/havenmail.conf" \
+    /etc/nginx/sites-available/havenmail.conf
+  nginx -t
+  systemctl reload nginx
+}
+
+# TLS über certbot im Webroot-Modus gegen das bereits laufende nginx
+# (havenmail_deploy_nginx_bootstrap), nur wenn noch kein Zertifikat für den
+# Mail-Hostnamen existiert. Erneuerung übernimmt certbots eigener
+# systemd-Timer aus dem Debian-Paket — im Webroot-Modus ohne Dienst-Stopp,
+# da kein Port-Konflikt mit nginx besteht.
 havenmail_provision_tls() {
   local hostname="$1" admin_email="$2"
   if [[ -d "/etc/letsencrypt/live/${hostname}" ]]; then
     havenmail_log "TLS-Zertifikat für ${hostname} bereits vorhanden — überspringe Ausstellung."
     return 0
   fi
-  havenmail_log "Fordere TLS-Zertifikat für ${hostname} über Let's Encrypt an (Standalone, Port 80)…"
-  certbot certonly --standalone --preferred-challenges http --non-interactive --agree-tos \
+  havenmail_log "Fordere TLS-Zertifikat für ${hostname} über Let's Encrypt an (Webroot)…"
+  certbot certonly --webroot -w /var/www/havenmail-acme --non-interactive --agree-tos \
     -m "$admin_email" -d "$hostname"
 }
 

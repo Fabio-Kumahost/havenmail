@@ -4,16 +4,22 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/), Ve
 
 ## [Unreleased]
 
-### Hinzugefügt (M5: Installer & Betrieb — in Arbeit)
-- `install.sh` implementiert vollständig: Preflight, Self-Bootstrap (Single-File-curl vs. bestehendes Checkout), Systembenutzer/-verzeichnisse, apt-Pakete, Rust-/Node-Toolchain-Install, PostgreSQL-Rolle/DB, TLS-Zertifikat (certbot, Standalone-Modus), Backend-/Frontend-Build, Deployment der gerenderten Postfix-/Dovecot-/Rspamd-/Fail2ban-Konfiguration an ihre Systempfade, Firewall (ufw), systemd-Unit, Dienststart, Health-Check
+### Hinzugefügt (M5: Installer & Betrieb)
+- `install.sh` implementiert vollständig: Preflight, Self-Bootstrap (Single-File-curl vs. bestehendes Checkout), Systembenutzer/-verzeichnisse, apt-Pakete, Rust-/Node-Toolchain-Install, PostgreSQL-Rolle/DB, zweiphasiger nginx-/TLS-Rollout (Übergangs-vhost → certbot Webroot → voller HTTPS-Vhost), Backend-/Frontend-Build, Deployment der gerenderten Postfix-/Dovecot-/Rspamd-/Fail2ban-/nginx-Konfiguration an ihre Systempfade, Firewall (ufw), systemd-Unit, Dienststart, Health-Check
+- `config/nginx/havenmail-http.conf.tera` (Übergangs-vhost für die ACME-Challenge) und `havenmail.conf.tera` (voller HTTPS-Vhost: reverse-proxied `/api/`, `/healthz`, `/readyz` zur Control-Plane, liefert den Frontend-Build mit SPA-Fallback aus). Frontend wird mit `VITE_HAVENMAIL_API_URL=""` gebaut — same-origin, kein CORS nötig
 - Neuer CLI-Befehl `havenmail-cli render-configs`: rendert alle `config/*.tera`-Templates lokal (nutzt die bereits getestete `havenmail_core::config_render`-Logik) — keine zweite Template-Engine in Bash
 - Neuer CLI-Befehl `havenmail-cli bootstrap-admin` + `havenmail_core::bootstrap`: legt idempotent die erste Domain und deren `super_admin`-Konto an; spricht direkt die DB an (kein unauthentifizierter API-Weg für die Kontoerstellung); generiertes Passwort landet ausschließlich in `/etc/havenmail/initial-admin-credentials` (0640), nie im Log
 - `config/systemd/havenmail-api.service`: gehärtete systemd-Unit für die Control-Plane-API
+- `backup.sh`/`restore.sh` implementiert: Archiv aus DB-Dump (`pg_dump --format=custom`) + `/etc/havenmail` (inkl. `HAVENMAIL_SECRETS_KEY`) + Maildaten, optionale gpg-Verschlüsselung, anzahlbasierte Retention; Restore verlangt explizite Bestätigung und verschiebt vorhandene Daten statt sie zu löschen
+- `update.sh` implementiert: Versions-/Hauptversionsprüfung, automatisches Backup vor der Migration, Wartungsmodus (nur die API wird gestoppt — SMTP/IMAP laufen weiter), zweiphasiger Selbstneustart nach `git checkout` (vermeidet undefiniertes Verhalten durch Selbstmodifikation der laufenden Skriptdatei), automatischer Binary-Rollback bei Fehlern
+- `uninstall.sh` implementiert: entfernt Havenmail-eigene Dienstteile/Konfigurationsfragmente; Nutzdaten (DB, Maildaten, Secrets) nur mit `--purge-data` und expliziter Bestätigung
+- `shellcheck -x` über alle Installer-/Betriebsskripte: 0 Findings
 
-### Bekannt / Noch ausstehend (nach M5, Zwischenstand)
-- Kein nginx-vhost-Template in `config/` — TLS läuft daher über certbot Standalone statt `--nginx`-Plugin; Reverse-Proxy für Admin-UI (`https://<hostname>/admin`) fehlt noch
-- `update.sh`/`backup.sh`/`restore.sh`/`uninstall.sh` sind weiterhin nur Gerüste, nutzen die neuen `scripts/lib/*`-Bausteine noch nicht
-- Kein End-to-End-Test des Installers auf einer frischen Debian-VM (nur einzelne Bausteine lokal gegen Dev-Postgres verifiziert)
+### Bekannt / Noch ausstehend (nach M5)
+- Kein End-to-End-Test des gesamten Installer-/Update-/Backup-Ablaufs auf einer frischen Debian-VM (nur einzelne Bausteine lokal gegen Dev-Postgres verifiziert, nginx-Konfiguration nur manuell geprüft — kein nginx auf der Entwicklungsmaschine verfügbar)
+- Repo ist noch nicht auf GitHub veröffentlicht — der dokumentierte Single-File-curl-Einzeiler funktioniert erst danach (`HAVENMAIL_SOURCE_REPO`/`USERNAME`-Platzhalter)
+- `update.sh --major`-Versionsvergleich ist rein heuristisch (String-Vergleich von `vX`-Tags), keine echte Signatur-/Release-Prüfung
+- Backup: kein S3-Ziel, keine gestaffelte Retention, kein automatisierter Sandbox-Restore-Test, kein Einzel-Domain-Restore
 
 ### Hinzugefügt (M4: Web-UI)
 - React-Router-basierte Admin-Oberfläche: Login, Dashboard (API-Health), Domain-Liste/-Anlage, Domain-Detailseite mit Benutzer-/Alias-CRUD

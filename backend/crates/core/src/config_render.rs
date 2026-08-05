@@ -37,6 +37,12 @@ pub struct RenderContext {
     pub db_password: String,
     pub tls_cert_path: String,
     pub tls_key_path: String,
+    /// Verzeichnis mit dem gebauten Frontend (`vite build`-Ausgabe), das
+    /// nginx als statische Dateien ausliefert (M5).
+    pub frontend_dist_dir: String,
+    /// Adresse, an die die Control-Plane-API gebunden ist (`host:port`);
+    /// nginx reverse-proxied `/api/`, `/healthz`, `/readyz` dorthin (M5).
+    pub api_bind: String,
 }
 
 /// Lädt alle `*.tera`-Templates aus `config_dir` (rekursiv) und rendert
@@ -75,6 +81,8 @@ mod tests {
             db_password: "test-secret".to_string(),
             tls_cert_path: "/etc/havenmail/tls/fullchain.pem".to_string(),
             tls_key_path: "/etc/havenmail/tls/privkey.pem".to_string(),
+            frontend_dist_dir: "/opt/havenmail/frontend/dist".to_string(),
+            api_bind: "127.0.0.1:8080".to_string(),
         }
     }
 
@@ -116,6 +124,28 @@ mod tests {
         )
         .expect("Rendering sollte gelingen");
         assert!(out.contains("mail.example.org") || out.contains("selector_map"));
+    }
+
+    #[test]
+    fn renders_nginx_bootstrap_vhost_with_hostname() {
+        let out = render_template(
+            &repo_config_dir(),
+            "nginx/havenmail-http.conf.tera",
+            &sample_context(),
+        )
+        .expect("Rendering sollte gelingen");
+        assert!(out.contains("server_name mail.example.org"));
+        assert!(out.contains("acme-challenge"));
+        assert!(!out.contains("ssl_certificate"));
+    }
+
+    #[test]
+    fn renders_nginx_full_vhost_with_tls_and_proxy_target() {
+        let out = render_template(&repo_config_dir(), "nginx/havenmail.conf.tera", &sample_context())
+            .expect("Rendering sollte gelingen");
+        assert!(out.contains("ssl_certificate /etc/havenmail/tls/fullchain.pem"));
+        assert!(out.contains("proxy_pass http://127.0.0.1:8080"));
+        assert!(out.contains("root /opt/havenmail/frontend/dist"));
     }
 
     #[test]
