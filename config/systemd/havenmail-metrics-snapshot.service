@@ -1,0 +1,10 @@
+[Unit]
+Description=Havenmail Metrics-Snapshot (Rspamd/ClamAV/Postfix)
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+User=havenmail
+Group=havenmail
+EnvironmentFile=/etc/havenmail/havenmail.env
+ExecStart=/opt/havenmail/backend/target/release/havenmail-cli snapshot-metrics

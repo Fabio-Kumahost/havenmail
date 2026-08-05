@@ -1,0 +1,13 @@
+[Unit]
+Description=Beobachtet die Rspamd-Reload-Trigger-Datei der Control-Plane-API
+
+[Path]
+# Von havenmail-api geschrieben (User "havenmail", Schreibrecht bereits
+# über /var/lib/havenmail in ReadWritePaths vorhanden - keine zusaetzliche
+# Haertungs-Lockerung noetig, siehe routes/security_settings.rs). Laeuft
+# selbst als root, daher ohne sudo/NoNewPrivileges-Konflikt.
+PathModified=/var/lib/havenmail/rspamd-reload-trigger
+Unit=havenmail-rspamd-reload.service
+
+[Install]
+WantedBy=multi-user.target

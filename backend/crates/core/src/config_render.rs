@@ -52,6 +52,55 @@ pub fn render_template(
     template_name: &str,
     ctx: &RenderContext,
 ) -> Result<String, RenderError> {
+    render_with(config_dir, template_name, ctx)
+}
+
+/// Werte für die vom Admin-Panel editierbaren Rspamd-Einstellungen
+/// (`security_settings`-Tabelle ist die Quelle der Wahrheit, siehe
+/// routes/security_settings.rs). Bewusst ein eigener, kleinerer Context
+/// statt `RenderContext` zu erweitern — diese Felder haben nichts mit
+/// Install-Zeit-Werten (DB-Zugangsdaten, TLS-Pfade) zu tun und werden bei
+/// jeder Einstellungsänderung neu gerendert, nicht nur einmalig beim Install.
+#[derive(Debug, Clone, Serialize)]
+pub struct SecurityRenderContext {
+    pub spam_greylist_score: f32,
+    pub spam_add_header_score: f32,
+    pub spam_reject_score: f32,
+    pub dmarc_enabled: bool,
+    pub ratelimit_enabled: bool,
+    pub ratelimit_per_hour: i32,
+    pub ratelimit_burst: i32,
+    pub antivirus_enabled: bool,
+    pub antivirus_action: String,
+    pub antivirus_max_size_mb: i32,
+}
+
+/// Rendert genau die vier Rspamd-Templates, die von `security_settings`
+/// abhängen. Rückgabe: Template-Name (relativ zu `config_dir`) -> Inhalt,
+/// damit der Aufrufer selbst entscheidet, wohin welche Datei geschrieben
+/// wird (siehe routes/security_settings.rs).
+pub fn render_security_settings(
+    config_dir: &Path,
+    ctx: &SecurityRenderContext,
+) -> Result<Vec<(&'static str, String)>, RenderError> {
+    const TEMPLATES: &[&str] = &[
+        "rspamd/local.d/actions.conf.tera",
+        "rspamd/local.d/antivirus.conf.tera",
+        "rspamd/local.d/dmarc.conf.tera",
+        "rspamd/local.d/ratelimit.conf.tera",
+    ];
+
+    TEMPLATES
+        .iter()
+        .map(|name| Ok((*name, render_with(config_dir, name, ctx)?)))
+        .collect()
+}
+
+fn render_with<T: Serialize>(
+    config_dir: &Path,
+    template_name: &str,
+    ctx: &T,
+) -> Result<String, RenderError> {
     let glob = format!("{}/**/*.tera", config_dir.display());
     let tera = Tera::new(&glob).map_err(|e| RenderError::Load(e.to_string()))?;
 
@@ -115,6 +164,25 @@ mod tests {
         assert!(out.contains("dovecot_auth_users"));
     }
 
+    /// Regressionstest: `havenmail-cli render-configs` (Install-Zeit) rendert
+    /// ALLE `*.tera`-Dateien unter config/ mit dem allgemeinen
+    /// `RenderContext`, der die security_settings-Felder nicht kennt. Ohne
+    /// `default(value=...)` in den vier betroffenen Templates würde das
+    /// hier mit einem Tera-Fehler ("undefined variable") fehlschlagen.
+    #[test]
+    fn security_templates_render_under_generic_install_time_context() {
+        for template in [
+            "rspamd/local.d/actions.conf.tera",
+            "rspamd/local.d/antivirus.conf.tera",
+            "rspamd/local.d/dmarc.conf.tera",
+            "rspamd/local.d/ratelimit.conf.tera",
+        ] {
+            let out = render_template(&repo_config_dir(), template, &sample_context())
+                .unwrap_or_else(|e| panic!("{template} sollte unter RenderContext rendern: {e}"));
+            assert!(!out.trim().is_empty());
+        }
+    }
+
     #[test]
     fn renders_rspamd_dkim_signing_config_with_hostname() {
         let out = render_template(
@@ -152,5 +220,57 @@ mod tests {
     fn unknown_template_yields_render_error() {
         let result = render_template(&repo_config_dir(), "does/not/exist.tera", &sample_context());
         assert!(result.is_err());
+    }
+
+    fn sample_security_context() -> SecurityRenderContext {
+        SecurityRenderContext {
+            spam_greylist_score: 4.0,
+            spam_add_header_score: 6.0,
+            spam_reject_score: 15.0,
+            dmarc_enabled: true,
+            ratelimit_enabled: true,
+            ratelimit_per_hour: 100,
+            ratelimit_burst: 100,
+            antivirus_enabled: true,
+            antivirus_action: "reject".to_string(),
+            antivirus_max_size_mb: 25,
+        }
+    }
+
+    #[test]
+    fn renders_all_four_security_templates() {
+        let rendered = render_security_settings(&repo_config_dir(), &sample_security_context())
+            .expect("Rendering sollte gelingen");
+        assert_eq!(rendered.len(), 4);
+
+        let actions = &rendered
+            .iter()
+            .find(|(name, _)| *name == "rspamd/local.d/actions.conf.tera")
+            .unwrap()
+            .1;
+        assert!(actions.contains("greylist = 4"));
+        assert!(actions.contains("reject = 15"));
+
+        let antivirus = &rendered
+            .iter()
+            .find(|(name, _)| *name == "rspamd/local.d/antivirus.conf.tera")
+            .unwrap()
+            .1;
+        assert!(antivirus.contains("enabled = true"));
+        assert!(antivirus.contains("action = \"reject\""));
+        assert!(antivirus.contains("max_size = 25m"));
+    }
+
+    #[test]
+    fn antivirus_action_line_omitted_when_not_reject() {
+        let mut ctx = sample_security_context();
+        ctx.antivirus_action = "add_header".to_string();
+        let rendered = render_security_settings(&repo_config_dir(), &ctx).unwrap();
+        let antivirus = &rendered
+            .iter()
+            .find(|(name, _)| *name == "rspamd/local.d/antivirus.conf.tera")
+            .unwrap()
+            .1;
+        assert!(!antivirus.contains("action ="));
     }
 }

@@ -101,6 +101,22 @@ enum Command {
         #[arg(long)]
         password: String,
     },
+    /// Erfasst eine Momentaufnahme der Rspamd-/ClamAV-/Postfix-Kennzahlen
+    /// für die Dashboard-Verlaufscharts. Verbindet sich direkt mit der
+    /// Datenbank statt über die API (kein Authentifizierungs-Overhead für
+    /// einen von systemd getriggerten Dienstkonto-Job nötig, gleiche
+    /// Begründung wie bei `BootstrapAdmin`). Vom systemd-Timer
+    /// `havenmail-metrics-snapshot.timer` alle 15 Minuten aufgerufen.
+    SnapshotMetrics {
+        #[arg(long, env = "DATABASE_URL")]
+        database_url: String,
+        #[arg(long, default_value = "/var/log/clamav/clamav.log")]
+        clamav_log_path: PathBuf,
+        #[arg(long, default_value = "/var/lib/clamav")]
+        clamav_lib_dir: PathBuf,
+        #[arg(long, default_value = "/var/mail")]
+        mail_spool_path: PathBuf,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -216,6 +232,14 @@ async fn main() {
             local_part,
             password,
         } => bootstrap_admin(&database_url, &domain, &local_part, &password)
+            .await
+            .map_err(|e| e.to_string()),
+        Command::SnapshotMetrics {
+            database_url,
+            clamav_log_path,
+            clamav_lib_dir,
+            mail_spool_path,
+        } => snapshot_metrics(&database_url, &clamav_log_path, &clamav_lib_dir, &mail_spool_path)
             .await
             .map_err(|e| e.to_string()),
     };
@@ -376,6 +400,86 @@ async fn bootstrap_admin(
             "user_id": user_id,
         }),
     })
+}
+
+/// Sammelt eine Momentaufnahme aus Rspamd, ClamAV-Log und Postfix-Queue
+/// und schreibt sie in `metrics_snapshots`. Jeder einzelne Sammelschritt
+/// ist bestmöglich-tolerant (liefert `None`/überspringt bei Fehler) — ein
+/// ausgefallener Dienst (z. B. Rspamd kurz neu gestartet) darf den
+/// gesamten Snapshot nicht verhindern, siehe havenmail_core::system.rs
+/// (`query_unit_status`) für denselben defensiven Stil.
+async fn snapshot_metrics(
+    database_url: &str,
+    clamav_log_path: &std::path::Path,
+    clamav_lib_dir: &std::path::Path,
+    mail_spool_path: &std::path::Path,
+) -> Result<Value, String> {
+    let pool = havenmail_core::db::connect(database_url)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let last_captured_at: Option<chrono::DateTime<chrono::Utc>> =
+        sqlx::query_scalar("SELECT captured_at FROM metrics_snapshots ORDER BY captured_at DESC LIMIT 1")
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    let clamav_since = last_captured_at.unwrap_or_else(|| chrono::Utc::now() - chrono::Duration::hours(1));
+
+    let stat = havenmail_core::rspamd_client::RspamdClient::default()
+        .stat()
+        .await
+        .ok();
+    let clamav_detected = havenmail_core::clamav_stats::detected_since(clamav_log_path, clamav_since);
+    let signature_age = havenmail_core::clamav_stats::signature_age(clamav_lib_dir);
+    let queue_size = havenmail_core::mail_queue::queue_size().await;
+    let disk_used_percent = disk_used_percent(mail_spool_path).await;
+
+    sqlx::query(
+        r#"
+        INSERT INTO metrics_snapshots (
+            rspamd_scanned, rspamd_spam_count, rspamd_ham_count,
+            rspamd_action_reject, rspamd_action_add_header, rspamd_action_greylist, rspamd_action_no_action,
+            clamav_detected_since_last, clamav_signature_age_hours,
+            mail_queue_size, disk_used_percent
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        "#,
+    )
+    .bind(stat.as_ref().map(|s| s.scanned as i64))
+    .bind(stat.as_ref().map(|s| s.spam_count as i64))
+    .bind(stat.as_ref().map(|s| s.ham_count as i64))
+    .bind(stat.as_ref().map(|s| s.actions.reject as i64))
+    .bind(stat.as_ref().map(|s| s.actions.add_header as i64))
+    .bind(stat.as_ref().map(|s| s.actions.greylist as i64))
+    .bind(stat.as_ref().map(|s| s.actions.no_action as i64))
+    .bind(clamav_detected as i32)
+    .bind(signature_age.map(|h| h as i32))
+    .bind(queue_size.map(|q| q as i32))
+    .bind(disk_used_percent)
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(json!({
+        "status": "recorded",
+        "rspamd_reachable": stat.is_some(),
+        "clamav_detected_since_last": clamav_detected,
+        "mail_queue_size": queue_size,
+        "disk_used_percent": disk_used_percent,
+    }))
+}
+
+/// `df --output=pcent <path>` gibt eine Kopfzeile ("Use%") gefolgt von
+/// einer rechtsbündigen Prozentzahl mit "%"-Suffix aus (z. B. " 12%").
+async fn disk_used_percent(path: &std::path::Path) -> Option<f32> {
+    let output = tokio::process::Command::new("df")
+        .args(["--output=pcent"])
+        .arg(path)
+        .output()
+        .await
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let value_line = stdout.lines().nth(1)?;
+    value_line.trim().trim_end_matches('%').parse().ok()
 }
 
 async fn response_to_value(response: reqwest::Response) -> Result<Value, String> {

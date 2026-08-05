@@ -8,10 +8,13 @@
 pub mod audit;
 pub mod auth;
 pub mod bootstrap;
+pub mod clamav_stats;
 pub mod config_render;
 pub mod db;
 pub mod dkim;
 pub mod dns_check;
+pub mod mail_queue;
 pub mod rbac;
+pub mod rspamd_client;
 
 pub use rbac::{Action, Actor, Role};

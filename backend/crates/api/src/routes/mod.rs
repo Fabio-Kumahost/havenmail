@@ -5,12 +5,13 @@ pub mod distribution_lists;
 pub mod dns;
 pub mod domains;
 pub mod forwards;
+pub mod security_settings;
 pub mod system;
 pub mod users;
 
 use crate::state::AppState;
 use axum::{
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
     Router,
 };
 
@@ -38,6 +39,10 @@ pub fn router() -> Router<AppState> {
             get(users::get_user)
                 .patch(users::update_user)
                 .delete(users::delete_user),
+        )
+        .route(
+            "/api/v1/users/me/password",
+            patch(users::change_own_password),
         )
         .route(
             "/api/v1/domains/:domain_id/aliases",
@@ -74,5 +79,18 @@ pub fn router() -> Router<AppState> {
             post(dns::run_dns_check),
         )
         .route("/api/v1/system/status", get(system::system_status))
+        .route("/api/v1/system/metrics", get(system::system_metrics))
+        .route(
+            "/api/v1/system/security-settings",
+            get(security_settings::get_settings),
+        )
+        .route(
+            "/api/v1/system/spam-settings",
+            patch(security_settings::update_spam_settings),
+        )
+        .route(
+            "/api/v1/system/virus-settings",
+            patch(security_settings::update_virus_settings),
+        )
         .route("/api/v1/audit-log", get(audit::list_audit_log))
 }

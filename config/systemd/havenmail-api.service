@@ -13,11 +13,16 @@ Restart=on-failure
 RestartSec=2
 
 # Hardening — siehe docs/architecture.md, Sicherheitsmodell.
+# /etc/rspamd/local.d ist eine bewusste, dokumentierte Lockerung: die
+# Sicherheits-Einstellungsseiten im Admin-Panel (Spam-/Virenschutz) müssen
+# echte Rspamd-Konfigurationsdateien schreiben können, siehe
+# routes/security_settings.rs. Jede Änderung wird vor dem Anwenden per
+# `rspamadm configtest` verifiziert.
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/var/lib/havenmail /var/log/havenmail
+ReadWritePaths=/var/lib/havenmail /var/log/havenmail /etc/rspamd/local.d
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
@@ -25,7 +30,15 @@ RestrictNamespaces=true
 RestrictRealtime=true
 RestrictSUIDSGID=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
+# MemoryDenyWriteExecute bewusst NICHT gesetzt: `rspamadm configtest` wird
+# als Kindprozess dieses Diensts aufgerufen (Sicherheitsnetz vor jeder
+# Rspamd-Config-Änderung, siehe routes/security_settings.rs) und braucht
+# dafür seine LuaJIT-Engine, die zur Laufzeit ausführbaren Code erzeugt
+# (W^X-Verletzung) — mit dieser Einstellung stürzt rspamadm mit "PANIC:
+# unprotected error in call to Lua API (runtime code generation failed,
+# restricted kernel?)" ab. Live isoliert verifiziert: exakt dieses eine
+# Flag verursacht den Absturz, alle übrigen Härtungsmaßnahmen unten bleiben
+# unverändert wirksam.
 SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
 

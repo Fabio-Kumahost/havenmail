@@ -36,6 +36,9 @@ async fn setup() -> Option<(Router, PgPool)> {
         secrets_key: Arc::new(vec![3u8; 32]),
         mail_hostname: Arc::new("mail.havenmail-test.invalid".to_string()),
         login_rate_limiter: Arc::default(),
+        config_dir: Arc::new(std::path::PathBuf::from(
+            env!("CARGO_MANIFEST_DIR").to_string() + "/../../../config",
+        )),
     };
     Some((havenmail_api::build_router(state), db))
 }

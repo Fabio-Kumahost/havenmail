@@ -1,0 +1,6 @@
+[Unit]
+Description=Havenmail Rspamd-Reload (getriggert durch die Control-Plane-API)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl reload rspamd
