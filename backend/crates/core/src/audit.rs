@@ -77,6 +77,71 @@ pub enum AuditChainError {
     TamperedEntry { index: usize },
 }
 
+/// Feste Advisory-Lock-ID (beliebig gewählt, aber stabil) zur Serialisierung
+/// von Audit-Anhängen über `record`. Ohne diese Sperre könnten zwei
+/// gleichzeitige Requests denselben `prev_hash` lesen und die Kette
+/// verzweigen lassen, statt sie linear zu verlängern.
+const AUDIT_CHAIN_LOCK_KEY: i64 = 0x4841_5645_4e4d_4c31; // "HAVENML1" in Hex
+
+/// Hängt einen neuen Eintrag an die Audit-Log-Hash-Chain in der Datenbank
+/// an. Serialisiert über einen Postgres-Advisory-Lock (in derselben
+/// Transaktion gehalten), damit gleichzeitige Aufrufe die Kette nicht
+/// verzweigen lassen. `ip` als Text im Postgres-`inet`-Format (z. B. aus
+/// `client_ip`-Modul der API).
+#[allow(clippy::too_many_arguments)]
+pub async fn record(
+    pool: &sqlx::PgPool,
+    actor_id: Option<Uuid>,
+    action: &str,
+    target: &str,
+    domain_id: Option<Uuid>,
+    before: Option<Value>,
+    after: Option<Value>,
+    ip: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(AUDIT_CHAIN_LOCK_KEY)
+        .execute(&mut *tx)
+        .await?;
+
+    let prev_hash: Option<String> =
+        sqlx::query_scalar("SELECT hash FROM audit_log ORDER BY seq DESC LIMIT 1")
+            .fetch_optional(&mut *tx)
+            .await?;
+
+    let created_at_unix = chrono::Utc::now().timestamp();
+    let input = AuditEntryInput {
+        actor_id,
+        action: action.to_string(),
+        target: target.to_string(),
+        before,
+        after,
+        created_at_unix,
+    };
+    let hash = compute_entry_hash(&input, prev_hash.as_deref());
+
+    sqlx::query(
+        r#"
+        INSERT INTO audit_log (actor_id, action, target, domain_id, before, after, ip, prev_hash, hash)
+        VALUES ($1, $2, $3, $4, $5, $6, $7::inet, $8, $9)
+        "#,
+    )
+    .bind(input.actor_id)
+    .bind(&input.action)
+    .bind(&input.target)
+    .bind(domain_id)
+    .bind(&input.before)
+    .bind(&input.after)
+    .bind(ip)
+    .bind(&prev_hash)
+    .bind(&hash)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

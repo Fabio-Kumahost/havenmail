@@ -1,4 +1,5 @@
 pub mod aliases;
+pub mod audit;
 pub mod auth;
 pub mod distribution_lists;
 pub mod dns;
@@ -73,4 +74,5 @@ pub fn router() -> Router<AppState> {
             post(dns::run_dns_check),
         )
         .route("/api/v1/system/status", get(system::system_status))
+        .route("/api/v1/audit-log", get(audit::list_audit_log))
 }

@@ -4,6 +4,7 @@
 //! Router gegen eine reale PostgreSQL-Instanz ausführen können, statt nur
 //! einzelne Handler isoliert zu testen.
 
+pub mod audit_log;
 pub mod auth_extractor;
 pub mod client_ip;
 pub mod error;

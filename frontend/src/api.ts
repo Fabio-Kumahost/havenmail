@@ -145,6 +145,18 @@ export interface SystemStatus {
   services: ServiceStatus[]
 }
 
+export interface AuditLogEntry {
+  id: string
+  actor_id: string | null
+  action: string
+  target: string
+  domain_id: string | null
+  before: unknown
+  after: unknown
+  ip: string | null
+  created_at: string
+}
+
 export const api = {
   login: (email: string, password: string) =>
     request<TokenResponse>('POST', '/api/v1/auth/login', { email, password }),
@@ -186,6 +198,13 @@ export const api = {
   },
   system: {
     status: () => request<SystemStatus>('GET', '/api/v1/system/status'),
+  },
+  auditLog: {
+    list: (domainId?: string) =>
+      request<AuditLogEntry[]>(
+        'GET',
+        `/api/v1/audit-log${domainId ? `?domain_id=${domainId}` : ''}`,
+      ),
   },
 }
 

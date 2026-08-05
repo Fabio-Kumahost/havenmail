@@ -16,13 +16,17 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/), Ve
 - `shellcheck -x` über alle Installer-/Betriebsskripte: 0 Findings
 - Neue API-Route `GET /api/v1/system/status` (nur `super_admin`, `Action::ManageSystemSettings`): Datenbankverbindung + `systemctl is-active` für alle orchestrierten Dienste (Postfix/Dovecot/Rspamd/ClamAV/nginx/Fail2ban/Control-Plane-API)
 - Neue Admin-UI-Seite „System“: zeigt den Dienststatus aus der neuen Route
+- Audit-Log an die API angebunden: `havenmail_core::audit::record` (neu) hängt Einträge transaktional + per Postgres-Advisory-Lock serialisiert an die Hash-Chain an (verhindert, dass gleichzeitige Requests die Kette verzweigen lassen). Migrationen `0003` (`seq`-Spalte für eindeutige Kettenreihenfolge) und `0004` (`domain_id`-Spalte für RBAC-Scoping). Verdrahtet in `domain.create/update/delete` und `user.create/update/delete` (Passwortänderungen landen nur als Aktionsname im Log, nie Klartext/Hash)
+- Neue API-Route `GET /api/v1/audit-log` (`Action::ViewAuditLog`): `super_admin` sieht alles (optional nach `domain_id` gefiltert), `domain_admin` zwingend nur die eigene Domain
+- Neue Admin-UI-Seite „Audit-Log“
 
 ### Bekannt / Noch ausstehend (nach M5)
 - Kein End-to-End-Test des gesamten Installer-/Update-/Backup-Ablaufs auf einer frischen Debian-VM (nur einzelne Bausteine lokal gegen Dev-Postgres verifiziert, nginx-Konfiguration nur manuell geprüft — kein nginx auf der Entwicklungsmaschine verfügbar)
 - Repo ist noch nicht auf GitHub veröffentlicht — der dokumentierte Single-File-curl-Einzeiler funktioniert erst danach (`HAVENMAIL_SOURCE_REPO`/`USERNAME`-Platzhalter)
 - `update.sh --major`-Versionsvergleich ist rein heuristisch (String-Vergleich von `vX`-Tags), keine echte Signatur-/Release-Prüfung
 - Backup: kein S3-Ziel, keine gestaffelte Retention, kein automatisierter Sandbox-Restore-Test, kein Einzel-Domain-Restore
-- Admin-UI: Quotas-Übersicht, Warteschlangen, Zustellfehler, Spam-/Virenereignisse, TLS-Zertifikatslaufzeit, Audit-Protokoll-Ansicht, Backup-/Update-Status noch nicht umgesetzt. Das Audit-Log-Datenmodell (`havenmail_core::audit`, Hash-Chain) existiert seit M1, wird aber von keiner API-Route beschrieben — `Action::ViewAuditLog` ist bisher ungenutzt
+- Audit-Log ist noch nicht an aliases/distribution_lists/forwards/dkim angebunden (nur domains/users) — kein Pagination-UI (Backend deckelt bei 200 Einträgen/Abfrage, UI zeigt aktuell fix die letzten 50)
+- Admin-UI: Quotas-Übersicht, Warteschlangen, Zustellfehler, Spam-/Virenereignisse, TLS-Zertifikatslaufzeit, Backup-/Update-Status noch nicht umgesetzt
 
 ### Hinzugefügt (M4: Web-UI)
 - React-Router-basierte Admin-Oberfläche: Login, Dashboard (API-Health), Domain-Liste/-Anlage, Domain-Detailseite mit Benutzer-/Alias-CRUD

@@ -3,6 +3,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 use axum::{
     extract::{Path, State},
+    http::HeaderMap,
     Json,
 };
 use havenmail_core::rbac::{Action, Role};
@@ -32,6 +33,7 @@ pub struct CreateDomainRequest {
 pub async fn create_domain(
     State(state): State<AppState>,
     AuthUser(actor): AuthUser,
+    headers: HeaderMap,
     Json(req): Json<CreateDomainRequest>,
 ) -> ApiResult<Json<Domain>> {
     if actor.role != Role::SuperAdmin {
@@ -58,6 +60,18 @@ pub async fn create_domain(
         }
         _ => ApiError::Internal(e),
     })?;
+
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "domain.create",
+        &domain.id.to_string(),
+        Some(domain.id),
+        None,
+        serde_json::to_value(&domain).ok(),
+    )
+    .await;
 
     Ok(Json(domain))
 }
@@ -120,6 +134,7 @@ pub async fn update_domain(
     State(state): State<AppState>,
     AuthUser(actor): AuthUser,
     Path(domain_id): Path<Uuid>,
+    headers: HeaderMap,
     Json(req): Json<UpdateDomainRequest>,
 ) -> ApiResult<Json<Domain>> {
     if !actor.can(Action::ManageDomain, Some(domain_id)) {
@@ -138,6 +153,7 @@ pub async fn update_domain(
     .fetch_optional(&state.db)
     .await?
     .ok_or(ApiError::NotFound)?;
+    let current_snapshot = serde_json::to_value(&current).ok();
 
     let is_active = req.is_active.unwrap_or(current.is_active);
     let catch_all_enabled = req.catch_all_enabled.unwrap_or(current.catch_all_enabled);
@@ -160,6 +176,18 @@ pub async fn update_domain(
     .fetch_one(&state.db)
     .await?;
 
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "domain.update",
+        &domain_id.to_string(),
+        Some(domain_id),
+        current_snapshot,
+        serde_json::to_value(&domain).ok(),
+    )
+    .await;
+
     Ok(Json(domain))
 }
 
@@ -169,6 +197,7 @@ pub async fn delete_domain(
     State(state): State<AppState>,
     AuthUser(actor): AuthUser,
     Path(domain_id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> ApiResult<Json<serde_json::Value>> {
     if actor.role != Role::SuperAdmin {
         return Err(ApiError::Forbidden);
@@ -180,5 +209,18 @@ pub async fn delete_domain(
     if result.rows_affected() == 0 {
         return Err(ApiError::NotFound);
     }
+
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "domain.delete",
+        &domain_id.to_string(),
+        None, // Domain bereits gelöscht — kein gültiger FK-Wert mehr
+        None,
+        None,
+    )
+    .await;
+
     Ok(Json(serde_json::json!({ "status": "deleted" })))
 }

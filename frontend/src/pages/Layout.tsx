@@ -19,6 +19,7 @@ export default function Layout() {
         </NavLink>
         <NavLink to="/domains">Domains</NavLink>
         <NavLink to="/system">System</NavLink>
+        <NavLink to="/audit-log">Audit-Log</NavLink>
         <button className="logout" onClick={onLogout}>
           Abmelden
         </button>

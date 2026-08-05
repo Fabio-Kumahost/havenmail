@@ -3,6 +3,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 use axum::{
     extract::{Path, State},
+    http::HeaderMap,
     Json,
 };
 use havenmail_core::auth::password;
@@ -34,6 +35,7 @@ pub async fn create_user(
     State(state): State<AppState>,
     AuthUser(actor): AuthUser,
     Path(domain_id): Path<Uuid>,
+    headers: HeaderMap,
     Json(req): Json<CreateUserRequest>,
 ) -> ApiResult<Json<User>> {
     if !actor.can(Action::ManageDomainUsers, Some(domain_id)) {
@@ -78,6 +80,18 @@ pub async fn create_user(
         }
         _ => ApiError::Internal(e),
     })?;
+
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "user.create",
+        &user.id.to_string(),
+        Some(user.domain_id),
+        None,
+        serde_json::to_value(&user).ok(),
+    )
+    .await;
 
     Ok(Json(user))
 }
@@ -133,6 +147,7 @@ pub async fn update_user(
     State(state): State<AppState>,
     AuthUser(actor): AuthUser,
     Path(user_id): Path<Uuid>,
+    headers: HeaderMap,
     Json(req): Json<UpdateUserRequest>,
 ) -> ApiResult<Json<User>> {
     let current = fetch_user_or_404(&state.db, user_id).await?;
@@ -192,6 +207,26 @@ pub async fn update_user(
         .await?
     };
 
+    // Passwort-Änderung wird im Aktionsnamen vermerkt, der Wert selbst nie
+    // (weder Klartext noch Hash landen im Audit-Log, das nur `before`/`after`
+    // aus den obigen User-Structs übernimmt — die enthalten kein Passwortfeld).
+    let action = if req.password.is_some() {
+        "user.update_with_password_change"
+    } else {
+        "user.update"
+    };
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        action,
+        &user_id.to_string(),
+        Some(current.domain_id),
+        serde_json::to_value(&current).ok(),
+        serde_json::to_value(&user).ok(),
+    )
+    .await;
+
     Ok(Json(user))
 }
 
@@ -199,6 +234,7 @@ pub async fn delete_user(
     State(state): State<AppState>,
     AuthUser(actor): AuthUser,
     Path(user_id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> ApiResult<Json<serde_json::Value>> {
     let current = fetch_user_or_404(&state.db, user_id).await?;
     if !actor.can(Action::ManageDomainUsers, Some(current.domain_id)) {
@@ -208,5 +244,18 @@ pub async fn delete_user(
         .bind(user_id)
         .execute(&state.db)
         .await?;
+
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "user.delete",
+        &user_id.to_string(),
+        Some(current.domain_id),
+        serde_json::to_value(&current).ok(),
+        None,
+    )
+    .await;
+
     Ok(Json(serde_json::json!({ "status": "deleted" })))
 }

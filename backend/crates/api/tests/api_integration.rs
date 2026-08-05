@@ -383,3 +383,89 @@ async fn system_status_requires_super_admin_and_reports_database_up() {
     let (status, _) = call(&app, "GET", "/api/v1/system/status", None, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn audit_log_records_domain_mutations_and_scopes_domain_admin() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (super_email, super_password) = bootstrap_super_admin(&db).await;
+    let super_token = login(&app, &super_email, &super_password).await;
+
+    // Domain anlegen -> erzeugt einen "domain.create"-Audit-Eintrag.
+    let domain_name = format!("audit-{}.test", Uuid::new_v4());
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": domain_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let domain_id = body["id"].as_str().unwrap().to_string();
+
+    // Eine zweite, fremde Domain für den Scoping-Teil des Tests.
+    let other_domain_name = format!("audit-other-{}.test", Uuid::new_v4());
+    let (status, _) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": other_domain_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // super_admin sieht den domain.create-Eintrag, gefiltert auf die erste Domain.
+    let (status, body) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/audit-log?domain_id={domain_id}"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let entries = body.as_array().expect("audit-log ist ein Array");
+    assert!(entries
+        .iter()
+        .any(|e| e["action"] == "domain.create" && e["target"] == domain_id));
+    assert!(entries.iter().all(|e| e["domain_id"] == domain_id));
+
+    // domain_admin für die erste Domain anlegen und einloggen.
+    let admin_password = "audit-domain-admin-pw!!";
+    let (status, body) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_id}/users"),
+        Some(&super_token),
+        Some(json!({ "local_part": "admin", "password": admin_password, "role": "domain_admin" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let admin_email = format!("admin@{domain_name}");
+    let admin_token = login(&app, &admin_email, admin_password).await;
+
+    // domain_admin sieht nur Einträge der eigenen Domain (domain_id-Query wird ignoriert).
+    let (status, body) = call(
+        &app,
+        "GET",
+        "/api/v1/audit-log",
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let entries = body.as_array().expect("audit-log ist ein Array");
+    assert!(!entries.is_empty());
+    assert!(entries.iter().all(|e| e["domain_id"] == domain_id));
+    assert!(entries
+        .iter()
+        .any(|e| e["action"] == "user.create" && e["domain_id"] == domain_id));
+
+    // Kein Token -> nicht authentifiziert.
+    let (status, _) = call(&app, "GET", "/api/v1/audit-log", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
