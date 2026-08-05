@@ -213,6 +213,17 @@ havenmail_render_configs() {
     awk '
       /^mail_location[[:space:]]*=[[:space:]]*maildir:/ {
         sub(/^[^:]*:[[:space:]]*/, "")
+        # Dovecot 2.4 expandiert die alten Kurzform-Variablen (%d, %n, …)
+        # in normalen Settings nicht mehr (nur noch %{user|domain} u.ä.
+        # in passdb/userdb-Query-Substitution). Ohne diese Übersetzung
+        # landet mail_path unexpandiert als Literal-Pfad
+        # ".../%d/%n/" auf der Platte, Dovecot legt seinen
+        # mailbox_list_index dort ab, findet die tatsächlichen
+        # Nachrichten im echten Pfad nie und meldet dauerhaft 0
+        # Nachrichten (real beobachtet: INBOX zeigte 0 Mails trotz
+        # zugestellter Dateien im korrekten Maildir).
+        gsub(/%d/, "%{user|domain}")
+        gsub(/%n/, "%{user|username}")
         print "mail_driver = maildir"
         print "mail_path = " $0
         next
