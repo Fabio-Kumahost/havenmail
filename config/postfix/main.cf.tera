@@ -16,6 +16,11 @@ virtual_minimum_uid = 5000
 virtual_uid_maps = static:5000
 virtual_gid_maps = static:5000
 
+# reject_sender_login_mismatch auf submission/smtps (siehe
+# master.cf.append) braucht diese Map, sonst gilt JEDE Absenderadresse
+# als "nicht owned" und Versand wird für alle Benutzer abgelehnt.
+smtpd_sender_login_maps = pgsql:/etc/postfix/havenmail/pgsql-sender-login-maps.cf
+
 # Eingehend (Port 25): kein Relay für fremde Domains, keine unauthentifizierte
 # Weiterleitung. sender/recipient-Restriktionen bewusst restriktiv, nicht
 # nur "permit_mynetworks".
