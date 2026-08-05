@@ -19,7 +19,7 @@ Dieses Dokument ist die verbindliche Referenz für Architektur, Komponenten, Sic
 - Zielplattform: Debian 12 (bookworm) und 13 (trixie), amd64 und arm64, native systemd-Installation als Standard (siehe Begründung unten); Docker Compose als dokumentierte Alternative für Testing/Staging.
 - Datenbank: PostgreSQL 16 (stabil, verbreitet, gute Backup-Werkzeuge) als primärer Metadatenspeicher; Maildir-Format auf Disk für Mailspeicherung (Dovecot-Standard, kompatibel mit klassischen Backup-Tools).
 - Lizenz: AGPL-3.0-or-later für Server-Code (verhindert unfreie SaaS-Weiterverwertung ohne Codefreigabe, üblich bei vergleichbaren Self-Hosting-Mailprojekten), MIT für CLI/SDK-Bibliotheken. Kann vom Nutzer jederzeit geändert werden.
-- Repository-Platzhalter `USERNAME/REPOSITORY`, da kein konkretes GitHub-Ziel genannt wurde.
+- Repository: [github.com/Fabio-Kumahost/havenmail](https://github.com/Fabio-Kumahost/havenmail) (ursprünglich als `USERNAME/REPOSITORY`-Platzhalter dokumentiert, seit M5 aufgelöst).
 - Single-Node-Deployment im MVP (kein Multi-Node-Clustering); Skalierungsgrenzen werden dokumentiert, nicht gelöst.
 - ClamAV für Virenprüfung (aktiv gepflegt, Standard in diesem Bereich); Rspamd übernimmt Spam/DKIM/SPF/DMARC/ARC-Auswertung und -Signierung.
 

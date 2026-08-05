@@ -11,7 +11,7 @@ HAVENMAIL_LOG_DIR="${HAVENMAIL_LOG_DIR:-/var/log/havenmail}"
 HAVENMAIL_ENV_FILE="${HAVENMAIL_ENV_FILE:-${HAVENMAIL_ETC_DIR}/havenmail.env}"
 HAVENMAIL_REPO_DIR="${HAVENMAIL_REPO_DIR:-/opt/havenmail}"
 HAVENMAIL_SYSTEM_USER="${HAVENMAIL_SYSTEM_USER:-havenmail}"
-HAVENMAIL_SOURCE_REPO="${HAVENMAIL_SOURCE_REPO:-https://github.com/USERNAME/havenmail.git}"
+HAVENMAIL_SOURCE_REPO="${HAVENMAIL_SOURCE_REPO:-https://github.com/Fabio-Kumahost/havenmail.git}"
 
 # Rust-Toolchain-Pfade IMMER exportieren, nicht nur innerhalb von
 # havenmail_install_rust_toolchain: rustups cargo-Shim (verlinkt nach

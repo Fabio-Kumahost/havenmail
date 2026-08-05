@@ -9,7 +9,7 @@
 # docs/architecture.md und docs/installation.md.
 #
 # Sichere Nutzung (empfohlen): Skript vor der Ausführung prüfen.
-#   curl -fsSLo install.sh https://raw.githubusercontent.com/USERNAME/havenmail/main/install.sh
+#   curl -fsSLo install.sh https://raw.githubusercontent.com/Fabio-Kumahost/havenmail/main/install.sh
 #   less install.sh
 #   sudo bash install.sh
 #
@@ -87,7 +87,7 @@ else
     git -C "$HAVENMAIL_REPO_DIR" checkout --quiet "$VERSION_REF"
   else
     git clone --quiet --branch "$VERSION_REF" \
-      "${HAVENMAIL_SOURCE_REPO:-https://github.com/USERNAME/havenmail.git}" \
+      "${HAVENMAIL_SOURCE_REPO:-https://github.com/Fabio-Kumahost/havenmail.git}" \
       "$HAVENMAIL_REPO_DIR"
   fi
   echo "Starte Installer aus dem vollständigen Checkout neu…"

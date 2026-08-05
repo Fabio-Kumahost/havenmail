@@ -1,6 +1,6 @@
 # Installation
 
-> **Status:** `install.sh` ist vollständig implementiert (M5) und wurde gegen die einzelnen Bausteine lokal verifiziert (siehe CHANGELOG.md). Ein End-to-End-Lauf auf einer frischen Debian-VM steht noch aus — vor dem ersten Produktiveinsatz unbedingt zuerst in einer Wegwerf-VM testen.
+> **Status:** `install.sh` ist vollständig implementiert (M5), per Docker-Debian-12-Simulation und einer echten VM-Installation end-to-end verifiziert (siehe CHANGELOG.md für die dabei gefundenen und behobenen Bugs).
 
 ## Voraussetzungen
 
@@ -42,17 +42,17 @@ sudo bash install.sh
 ## Geplanter One-Liner (sobald auf GitHub veröffentlicht)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/USERNAME/havenmail/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/Fabio-Kumahost/havenmail/main/install.sh | sudo bash
 ```
 
-Lädt zunächst nur `install.sh`; das Skript erkennt das Fehlen von `scripts/lib/`, klont daraufhin den vollständigen Quellcode nach `/opt/havenmail` (via `HAVENMAIL_SOURCE_REPO`, Standard `https://github.com/USERNAME/havenmail.git` — `USERNAME` muss beim Veröffentlichen ersetzt werden) und startet sich von dort neu.
+Lädt zunächst nur `install.sh`; das Skript erkennt das Fehlen von `scripts/lib/`, klont daraufhin den vollständigen Quellcode nach `/opt/havenmail` (via `HAVENMAIL_SOURCE_REPO`, Standard `https://github.com/Fabio-Kumahost/havenmail.git` — `Fabio-Kumahost` muss beim Veröffentlichen ersetzt werden) und startet sich von dort neu.
 
 ## Empfohlene, sichere Variante
 
 Skript vor Ausführung immer prüfen:
 
 ```bash
-curl -fsSLo install.sh https://raw.githubusercontent.com/USERNAME/havenmail/main/install.sh
+curl -fsSLo install.sh https://raw.githubusercontent.com/Fabio-Kumahost/havenmail/main/install.sh
 less install.sh
 sudo bash install.sh
 ```

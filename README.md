@@ -21,13 +21,13 @@ Details zu Architektur, Bedrohungsmodell, Datenmodell und Meilensteinen: siehe [
 ## Installation (Zielbild — noch nicht verfügbar)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/USERNAME/havenmail/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/Fabio-Kumahost/havenmail/main/install.sh | sudo bash
 ```
 
 Sicherere, empfohlene Variante — Skript vorher prüfen:
 
 ```bash
-curl -fsSLo install.sh https://raw.githubusercontent.com/USERNAME/havenmail/main/install.sh
+curl -fsSLo install.sh https://raw.githubusercontent.com/Fabio-Kumahost/havenmail/main/install.sh
 less install.sh
 sudo bash install.sh
 ```
