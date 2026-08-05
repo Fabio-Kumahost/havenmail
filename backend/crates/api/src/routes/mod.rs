@@ -4,6 +4,7 @@ pub mod distribution_lists;
 pub mod dns;
 pub mod domains;
 pub mod forwards;
+pub mod system;
 pub mod users;
 
 use crate::state::AppState;
@@ -71,4 +72,5 @@ pub fn router() -> Router<AppState> {
             "/api/v1/domains/:domain_id/dns-check",
             post(dns::run_dns_check),
         )
+        .route("/api/v1/system/status", get(system::system_status))
 }

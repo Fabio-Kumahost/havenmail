@@ -134,6 +134,17 @@ export interface DnsCheckResult {
   status: 'ok' | 'missing' | 'mismatch'
 }
 
+export interface ServiceStatus {
+  unit: string
+  active: boolean
+  detail: string
+}
+
+export interface SystemStatus {
+  database: boolean
+  services: ServiceStatus[]
+}
+
 export const api = {
   login: (email: string, password: string) =>
     request<TokenResponse>('POST', '/api/v1/auth/login', { email, password }),
@@ -172,6 +183,9 @@ export const api = {
   },
   health: {
     ready: () => request<{ status: string; checks: Record<string, boolean> }>('GET', '/readyz'),
+  },
+  system: {
+    status: () => request<SystemStatus>('GET', '/api/v1/system/status'),
   },
 }
 

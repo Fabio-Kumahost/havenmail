@@ -1,14 +1,13 @@
 /**
  * Havenmail Admin-Oberfläche.
  *
- * STATUS (M4): Login, Dashboard (nur Health-Status), Domain-Verwaltung,
+ * STATUS (M5): Login, Dashboard (Health-Status), Domain-Verwaltung,
  * Benutzer-/Alias-CRUD, DNS-Einrichtungsassistent (kopierbare Einträge +
- * Live-Prüfung), DKIM-Schlüsselerzeugung. Weitere in der Aufgabenstellung
- * genannte Bereiche (Quotas, Warteschlangen, Zustellfehler, Spam-/
- * Virenereignisse, TLS-Zertifikate, System-/Audit-Protokolle, Backup-Status,
- * Updates, Dienste/Ressourcen) sind noch nicht umgesetzt — sie benötigen
- * die installierten Mail-Engines (M5) bzw. weitere Backend-Endpunkte, die
- * noch nicht existieren. Siehe CHANGELOG.md für den genauen Stand.
+ * Live-Prüfung), DKIM-Schlüsselerzeugung, System-Seite (Dienststatus der
+ * Mail-Engines). Weiterhin offen: Quotas-Übersicht, Warteschlangen,
+ * Zustellfehler, Spam-/Virenereignisse, TLS-Zertifikatslaufzeit,
+ * Audit-Protokoll-Ansicht, Backup-/Update-Status — benötigen weitere
+ * Backend-Endpunkte. Siehe CHANGELOG.md für den genauen Stand.
  */
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './AuthContext'
@@ -18,6 +17,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Domains from './pages/Domains'
 import DomainDetail from './pages/DomainDetail'
+import System from './pages/System'
 import './App.css'
 
 function App() {
@@ -31,6 +31,7 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/domains" element={<Domains />} />
               <Route path="/domains/:domainId" element={<DomainDetail />} />
+              <Route path="/system" element={<System />} />
             </Route>
           </Route>
         </Routes>

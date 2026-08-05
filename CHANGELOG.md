@@ -14,12 +14,15 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/), Ve
 - `update.sh` implementiert: Versions-/Hauptversionsprüfung, automatisches Backup vor der Migration, Wartungsmodus (nur die API wird gestoppt — SMTP/IMAP laufen weiter), zweiphasiger Selbstneustart nach `git checkout` (vermeidet undefiniertes Verhalten durch Selbstmodifikation der laufenden Skriptdatei), automatischer Binary-Rollback bei Fehlern
 - `uninstall.sh` implementiert: entfernt Havenmail-eigene Dienstteile/Konfigurationsfragmente; Nutzdaten (DB, Maildaten, Secrets) nur mit `--purge-data` und expliziter Bestätigung
 - `shellcheck -x` über alle Installer-/Betriebsskripte: 0 Findings
+- Neue API-Route `GET /api/v1/system/status` (nur `super_admin`, `Action::ManageSystemSettings`): Datenbankverbindung + `systemctl is-active` für alle orchestrierten Dienste (Postfix/Dovecot/Rspamd/ClamAV/nginx/Fail2ban/Control-Plane-API)
+- Neue Admin-UI-Seite „System“: zeigt den Dienststatus aus der neuen Route
 
 ### Bekannt / Noch ausstehend (nach M5)
 - Kein End-to-End-Test des gesamten Installer-/Update-/Backup-Ablaufs auf einer frischen Debian-VM (nur einzelne Bausteine lokal gegen Dev-Postgres verifiziert, nginx-Konfiguration nur manuell geprüft — kein nginx auf der Entwicklungsmaschine verfügbar)
 - Repo ist noch nicht auf GitHub veröffentlicht — der dokumentierte Single-File-curl-Einzeiler funktioniert erst danach (`HAVENMAIL_SOURCE_REPO`/`USERNAME`-Platzhalter)
 - `update.sh --major`-Versionsvergleich ist rein heuristisch (String-Vergleich von `vX`-Tags), keine echte Signatur-/Release-Prüfung
 - Backup: kein S3-Ziel, keine gestaffelte Retention, kein automatisierter Sandbox-Restore-Test, kein Einzel-Domain-Restore
+- Admin-UI: Quotas-Übersicht, Warteschlangen, Zustellfehler, Spam-/Virenereignisse, TLS-Zertifikatslaufzeit, Audit-Protokoll-Ansicht, Backup-/Update-Status noch nicht umgesetzt. Das Audit-Log-Datenmodell (`havenmail_core::audit`, Hash-Chain) existiert seit M1, wird aber von keiner API-Route beschrieben — `Action::ViewAuditLog` ist bisher ungenutzt
 
 ### Hinzugefügt (M4: Web-UI)
 - React-Router-basierte Admin-Oberfläche: Login, Dashboard (API-Health), Domain-Liste/-Anlage, Domain-Detailseite mit Benutzer-/Alias-CRUD

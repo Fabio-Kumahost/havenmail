@@ -363,3 +363,23 @@ async fn dkim_generation_updates_dns_recommendations() {
         .unwrap()
         .starts_with("v=DKIM1"));
 }
+
+#[tokio::test]
+async fn system_status_requires_super_admin_and_reports_database_up() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (super_email, super_password) = bootstrap_super_admin(&db).await;
+    let super_token = login(&app, &super_email, &super_password).await;
+
+    let (status, body) = call(&app, "GET", "/api/v1/system/status", Some(&super_token), None).await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    assert_eq!(body["database"], json!(true));
+    let services = body["services"].as_array().expect("services ist ein Array");
+    assert!(services.iter().any(|s| s["unit"] == "postfix"));
+
+    // Ohne Token: nicht authentifiziert, keine Statusdetails preisgegeben.
+    let (status, _) = call(&app, "GET", "/api/v1/system/status", None, None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
