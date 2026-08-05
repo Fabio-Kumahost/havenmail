@@ -163,6 +163,31 @@ export interface AuditLogEntry {
   created_at: string
 }
 
+export interface SecuritySettings {
+  spam_greylist_score: number
+  spam_add_header_score: number
+  spam_reject_score: number
+  dmarc_enabled: boolean
+  ratelimit_enabled: boolean
+  ratelimit_per_hour: number
+  ratelimit_burst: number
+  antivirus_enabled: boolean
+  antivirus_action: 'reject' | 'add_header' | 'no_action'
+  antivirus_max_size_mb: number
+  updated_at: string
+}
+
+export interface MetricsPoint {
+  captured_at: string
+  spam_delta: number | null
+  ham_delta: number | null
+  scanned_delta: number | null
+  reject_delta: number | null
+  virus_detected: number | null
+  mail_queue_size: number | null
+  disk_used_percent: number | null
+}
+
 export const api = {
   login: (email: string, password: string) =>
     request<TokenResponse>('POST', '/api/v1/auth/login', { email, password }),
@@ -211,6 +236,21 @@ export const api = {
         'GET',
         `/api/v1/audit-log${domainId ? `?domain_id=${domainId}` : ''}`,
       ),
+  },
+  account: {
+    changePassword: (current_password: string, new_password: string) =>
+      request<User>('PATCH', '/api/v1/users/me/password', { current_password, new_password }),
+  },
+  securitySettings: {
+    get: () => request<SecuritySettings>('GET', '/api/v1/system/security-settings'),
+    updateSpam: (patch: Partial<SecuritySettings>) =>
+      request<SecuritySettings>('PATCH', '/api/v1/system/spam-settings', patch),
+    updateVirus: (patch: Partial<SecuritySettings>) =>
+      request<SecuritySettings>('PATCH', '/api/v1/system/virus-settings', patch),
+  },
+  metrics: {
+    range: (range: '7d' | '30d' = '7d') =>
+      request<MetricsPoint[]>('GET', `/api/v1/system/metrics?range=${range}`),
   },
 }
 

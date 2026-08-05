@@ -865,11 +865,13 @@ dependencies = [
 name = "havenmail-cli"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "clap",
  "havenmail-core",
  "reqwest",
  "serde",
  "serde_json",
+ "sqlx",
  "tokio",
 ]
 
@@ -885,6 +887,7 @@ dependencies = [
  "jsonwebtoken",
  "password-hash",
  "rand_core 0.6.4",
+ "reqwest",
  "rsa",
  "serde",
  "serde_json",

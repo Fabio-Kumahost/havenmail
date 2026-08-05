@@ -31,6 +31,25 @@ const ICONS = {
       <path d="M9 13h6M9 17h4" />
     </svg>
   ),
+  spam: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M4 4h16v4l-8 5-8-5V4Z" />
+      <path d="M4 8v12h16V8" />
+      <path d="m14.5 15.5 4 4M18.5 15.5l-4 4" />
+    </svg>
+  ),
+  virus: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 2c2.5 2.6 3.8 5.9 3.8 10s-1.3 7.4-3.8 10c-2.5-2.6-3.8-5.9-3.8-10s1.3-7.4 3.8-10Z" />
+      <path d="M2 12c2.6-2.5 5.9-3.8 10-3.8s7.4 1.3 10 3.8c-2.6 2.5-5.9 3.8-10 3.8S4.6 14.5 2 12Z" />
+    </svg>
+  ),
+  account: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M4.5 20c1.4-3.6 4.4-5.5 7.5-5.5s6.1 1.9 7.5 5.5" />
+    </svg>
+  ),
   logout: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -60,6 +79,14 @@ export default function Layout() {
           {ICONS.domains}
           <span>Domains</span>
         </NavLink>
+        <NavLink to="/spam-settings">
+          {ICONS.spam}
+          <span>Spam-Schutz</span>
+        </NavLink>
+        <NavLink to="/virus-settings">
+          {ICONS.virus}
+          <span>Virenschutz</span>
+        </NavLink>
         <NavLink to="/system">
           {ICONS.system}
           <span>System</span>
@@ -67,6 +94,10 @@ export default function Layout() {
         <NavLink to="/audit-log">
           {ICONS.audit}
           <span>Audit-Log</span>
+        </NavLink>
+        <NavLink to="/account" className="sidebar-account">
+          {ICONS.account}
+          <span>Mein Konto</span>
         </NavLink>
         <button className="logout" onClick={onLogout}>
           {ICONS.logout}

@@ -1,6 +1,7 @@
 use crate::rate_limit::LoginRateLimiter;
 use havenmail_core::auth::jwt::JwtIssuer;
 use sqlx::PgPool;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -15,4 +16,8 @@ pub struct AppState {
     pub mail_hostname: Arc<String>,
     /// Brute-Force-Schutz für `/api/v1/auth/login` (siehe `rate_limit`-Modul).
     pub login_rate_limiter: Arc<LoginRateLimiter>,
+    /// Repo-`config/`-Verzeichnis mit den `*.tera`-Templates
+    /// (`HAVENMAIL_CONFIG_DIR`) — für Laufzeit-Rendering von
+    /// Security-Settings-Änderungen, siehe routes/security_settings.rs.
+    pub config_dir: Arc<PathBuf>,
 }

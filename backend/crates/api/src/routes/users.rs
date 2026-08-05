@@ -230,6 +230,83 @@ pub async fn update_user(
     Ok(Json(user))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+#[derive(Debug, FromRow)]
+struct PasswordHashRow {
+    password_hash: String,
+}
+
+/// Selbstbedienungs-Passwortänderung — anders als `update_user` (das ein
+/// Domain-/Systemadmin auch ohne Kenntnis des Altpassworts nutzen kann, um
+/// ein fremdes Konto zurückzusetzen) verlangt dieser Endpunkt das aktuelle
+/// Passwort. Aus dem JWT über `AuthUser` aufgelöst statt über einen
+/// `:user_id`-Pfadparameter, da das Frontend die eigene User-ID nicht kennt
+/// (kein Client-seitiges JWT-Decoding, siehe api.ts).
+pub async fn change_own_password(
+    State(state): State<AppState>,
+    AuthUser(actor): AuthUser,
+    headers: HeaderMap,
+    Json(req): Json<ChangePasswordRequest>,
+) -> ApiResult<Json<User>> {
+    if !actor.can(Action::ManageOwnAccount, None) {
+        return Err(ApiError::Forbidden);
+    }
+    if req.new_password.len() < 12 {
+        return Err(ApiError::BadRequest(
+            "neues Passwort muss mindestens 12 Zeichen haben".to_string(),
+        ));
+    }
+
+    let row: PasswordHashRow =
+        sqlx::query_as("SELECT password_hash FROM users WHERE id = $1")
+            .bind(actor.user_id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or(ApiError::NotFound)?;
+
+    if !password::verify_password(&req.current_password, &row.password_hash) {
+        return Err(ApiError::BadRequest(
+            "aktuelles Passwort ist falsch".to_string(),
+        ));
+    }
+
+    let new_hash = password::hash_password(&req.new_password)
+        .map_err(|e| ApiError::TokenIssue(e.to_string()))?;
+
+    let user: User = sqlx::query_as(
+        r#"
+        UPDATE users SET password_hash = $2
+        WHERE id = $1
+        RETURNING id, domain_id, local_part, role::text as role, quota_bytes, is_active, created_at
+        "#,
+    )
+    .bind(actor.user_id)
+    .bind(new_hash)
+    .fetch_one(&state.db)
+    .await?;
+
+    // Wie bei update_user: nie das Passwort selbst loggen, nur dass es
+    // sich geändert hat.
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "user.change_own_password",
+        &actor.user_id.to_string(),
+        Some(user.domain_id),
+        None,
+        None,
+    )
+    .await;
+
+    Ok(Json(user))
+}
+
 pub async fn delete_user(
     State(state): State<AppState>,
     AuthUser(actor): AuthUser,

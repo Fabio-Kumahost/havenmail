@@ -2,6 +2,11 @@
 # DMARC-Auswertung eingehender Mail (SPF/DKIM-Alignment). Die DMARC-Policy
 # der eigenen Domains selbst wird per DNS-TXT-Eintrag gesetzt, siehe
 # docs/dns-setup.md — dieser Block betrifft nur die serverseitige Prüfung.
+#
+# `dmarc_enabled` ist über das Admin-Panel editierbar (Spam-Schutz-Seite,
+# siehe routes/security_settings.rs) — Quelle der Wahrheit ist die
+# `security_settings`-Tabelle, nicht diese Datei.
+enabled = {{ dmarc_enabled | default(value=true) }};
 actions {
     quarantine = 0.0; # Symbol-Gewichtung, kein automatisches Quarantine per Default
     reject = false;

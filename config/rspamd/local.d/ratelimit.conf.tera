@@ -1,11 +1,17 @@
 # Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
 # Rate-Limiting gegen Spam-/Brute-Force-Abuse über authentifizierte
 # Submission-Accounts (siehe docs/architecture.md, Bedrohungsanalyse).
+#
+# `ratelimit_enabled`/`ratelimit_per_hour`/`ratelimit_burst` sind über das
+# Admin-Panel editierbar (Spam-Schutz-Seite, siehe
+# routes/security_settings.rs) — Quelle der Wahrheit ist die
+# `security_settings`-Tabelle, nicht diese Datei.
+enabled = {{ ratelimit_enabled | default(value=true) }};
 rates {
   user_per_hour {
     bucket {
-      burst = 100;
-      rate = "100 / 1h";
+      burst = {{ ratelimit_burst | default(value=100) }};
+      rate = "{{ ratelimit_per_hour | default(value=100) }} / 1h";
     }
     keys = ["user"];
   }

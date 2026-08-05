@@ -28,6 +28,8 @@ async fn main() {
     }
     let mail_hostname = std::env::var("HAVENMAIL_HOSTNAME")
         .expect("HAVENMAIL_HOSTNAME muss gesetzt sein (siehe .env.example)");
+    let config_dir = std::env::var("HAVENMAIL_CONFIG_DIR")
+        .unwrap_or_else(|_| "/opt/havenmail/config".to_string());
 
     let db = havenmail_core::db::connect(&database_url)
         .await
@@ -43,6 +45,7 @@ async fn main() {
         secrets_key: Arc::new(secrets_key.into_bytes()),
         mail_hostname: Arc::new(mail_hostname),
         login_rate_limiter: Arc::default(),
+        config_dir: Arc::new(std::path::PathBuf::from(config_dir)),
     };
 
     let app = havenmail_api::build_router(state);

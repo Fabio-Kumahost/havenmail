@@ -2,11 +2,24 @@
 # Anbindung von ClamAV über dessen Milter/ClamD-Socket. Rspamd übernimmt
 # die Auswertung des Scan-Ergebnisses; die eigentliche Virenprüfung erfolgt
 # vollständig in ClamAV (keine Havenmail-Eigenimplementierung).
+#
+# `antivirus_enabled`/`antivirus_action`/`antivirus_max_size_mb` sind über
+# das Admin-Panel editierbar (Virenschutz-Seite, siehe
+# routes/security_settings.rs) — Quelle der Wahrheit ist die
+# `security_settings`-Tabelle, nicht diese Datei.
+#
+# `default(value=...)` greift nur beim allgemeinen Install-Zeit-Rendering
+# (RenderContext kennt diese Felder nicht) — spiegelt dort Rspamds/Havenmails
+# bisheriges Verhalten (Modul an, harter Reject), siehe 0005_security_settings.sql.
 clamav {
+  enabled = {{ antivirus_enabled | default(value=true) }};
+{%- if antivirus_action | default(value="reject") == "reject" %}
   action = "reject";
+{%- endif %}
   symbol = "CLAM_VIRUS";
   type = "clamav";
   servers = "/var/run/clamav/clamd.ctl";
+  max_size = {{ antivirus_max_size_mb | default(value=25) }}m;
   patterns {
     EICAR = "^Eicar-Test-Signature$";
   }

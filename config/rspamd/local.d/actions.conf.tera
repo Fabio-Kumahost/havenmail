@@ -1,0 +1,21 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+# Globale Score-Schwellen, editierbar über das Admin-Panel (Spam-Schutz-
+# Seite, siehe routes/security_settings.rs). Quelle der Wahrheit ist die
+# `security_settings`-Tabelle, nicht diese Datei — ein erneuter
+# render-configs-/PATCH-Lauf überschreibt sie mit dem DB-Stand.
+#
+# `default(value=...)` greift nur beim allgemeinen Install-Zeit-Rendering
+# (havenmail-cli render-configs, RenderContext kennt diese Felder nicht) —
+# spiegelt dort bewusst Rspamds eigene Builtin-Defaults, siehe
+# 0005_security_settings.sql. Beim laufzeit-Rendering aus
+# SecurityRenderContext (routes/security_settings.rs) sind die Felder
+# immer gesetzt, der Default kommt nie zum Tragen.
+#
+# KEIN äußerer "actions { }"-Block hier: Rspamd verschachtelt den Inhalt
+# von local.d/<name>.conf automatisch in eine Sektion namens <name> — ein
+# zusätzlicher Wrapper ergäbe "actions { actions { ... } }" und einen
+# Configtest-Fehler ("nested section"). Selbes Prinzip wie bei
+# ratelimit.conf (rates{} direkt, kein äußeres ratelimit{}).
+greylist = {{ spam_greylist_score | default(value=4) }};
+add_header = {{ spam_add_header_score | default(value=6) }};
+reject = {{ spam_reject_score | default(value=15) }};

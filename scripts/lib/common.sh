@@ -60,6 +60,12 @@ havenmail_ensure_system_user() {
       --uid 5000 --user-group "$HAVENMAIL_SYSTEM_USER"
     havenmail_log "Systembenutzer '${HAVENMAIL_SYSTEM_USER}' angelegt (uid 5000)."
   fi
+  # havenmail-cli snapshot-metrics liest /var/log/clamav/clamav.log für die
+  # Virenfund-Statistik im Dashboard (siehe clamav_stats.rs) — das Log ist
+  # per Debian-Default nur für root/Gruppe clamav lesbar.
+  if getent group clamav >/dev/null 2>&1; then
+    usermod -aG clamav "$HAVENMAIL_SYSTEM_USER"
+  fi
 }
 
 # Liest einen Wert aus der Env-Datei, falls vorhanden (für Idempotenz: bei

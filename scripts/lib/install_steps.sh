@@ -356,11 +356,18 @@ havenmail_deploy_mail_configs() {
   sed -i 's/^!include auth-system\.conf\.ext/#!include auth-system.conf.ext/' \
     /etc/dovecot/conf.d/10-auth.conf
 
-  install -d -m 0755 /etc/rspamd/local.d
-  install -m 0644 "${render_dir}/rspamd/local.d/antivirus.conf" /etc/rspamd/local.d/antivirus.conf
+  # Gruppe havenmail statt root:root, Verzeichnis+Dateien gruppen-
+  # beschreibbar: die Sicherheits-Einstellungsseiten im Admin-Panel
+  # (routes/security_settings.rs) schreiben diese Dateien zur Laufzeit als
+  # Systembenutzer "havenmail" neu (siehe ReadWritePaths in
+  # havenmail-api.service). Weiterhin world-readable, da Rspamd selbst
+  # unter einem eigenen Systemuser (_rspamd) läuft, nicht als havenmail.
+  install -d -m 0775 -o root -g havenmail /etc/rspamd/local.d
+  install -m 0664 -o root -g havenmail "${render_dir}/rspamd/local.d/actions.conf" /etc/rspamd/local.d/actions.conf
+  install -m 0664 -o root -g havenmail "${render_dir}/rspamd/local.d/antivirus.conf" /etc/rspamd/local.d/antivirus.conf
   install -m 0644 "${render_dir}/rspamd/local.d/dkim_signing.conf" /etc/rspamd/local.d/dkim_signing.conf
-  install -m 0644 "${render_dir}/rspamd/local.d/dmarc.conf" /etc/rspamd/local.d/dmarc.conf
-  install -m 0644 "${render_dir}/rspamd/local.d/ratelimit.conf" /etc/rspamd/local.d/ratelimit.conf
+  install -m 0664 -o root -g havenmail "${render_dir}/rspamd/local.d/dmarc.conf" /etc/rspamd/local.d/dmarc.conf
+  install -m 0664 -o root -g havenmail "${render_dir}/rspamd/local.d/ratelimit.conf" /etc/rspamd/local.d/ratelimit.conf
 
   install -d -m 0755 /etc/fail2ban/filter.d
   install -m 0644 "${render_dir}/fail2ban/havenmail-postfix.conf" /etc/fail2ban/filter.d/havenmail-postfix.conf
@@ -490,8 +497,22 @@ havenmail_install_systemd_units() {
   havenmail_log "Installiere systemd-Unit für die Control-Plane-API…"
   install -m 0644 "${HAVENMAIL_REPO_DIR}/config/systemd/havenmail-api.service" \
     /etc/systemd/system/havenmail-api.service
+
+  havenmail_log "Installiere Timer für periodische Dashboard-Metriken-Snapshots…"
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/systemd/havenmail-metrics-snapshot.service" \
+    /etc/systemd/system/havenmail-metrics-snapshot.service
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/systemd/havenmail-metrics-snapshot.timer" \
+    /etc/systemd/system/havenmail-metrics-snapshot.timer
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/systemd/havenmail-rspamd-reload.service" \
+    /etc/systemd/system/havenmail-rspamd-reload.service
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/systemd/havenmail-rspamd-reload.path" \
+    /etc/systemd/system/havenmail-rspamd-reload.path
+
   systemctl daemon-reload
   systemctl enable --quiet havenmail-api.service
+  systemctl enable --quiet --now havenmail-metrics-snapshot.timer
+  systemctl enable --quiet --now havenmail-rspamd-reload.path
+
 }
 
 # ClamAV startet nicht, solange keine Signaturdatenbank vorhanden ist
