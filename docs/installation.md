@@ -93,3 +93,4 @@ Verifiziert per Docker-Debian-12-Simulation (systemd, echte Pakete/Build) und ei
 3. Passwort ändern, 2FA aktivieren
 4. Erste Domain und Benutzer anlegen
 5. `initial-admin-credentials` nach dem ersten Login löschen oder rotieren
+6. Abnahmetest laufen lassen: `sudo bash scripts/acceptance-test.sh` (Open-Relay-, TLS-, DKIM-, Rechtetrennungs-Check; siehe docs/architecture.md, M6)

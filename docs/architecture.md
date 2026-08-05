@@ -178,4 +178,4 @@ Jeder Meilenstein schließt mit grünem Build + Tests ab, bevor der nächste beg
 - Nach jedem Meilenstein: `cargo build && cargo test` (Backend), `npm run build && npm test` (Frontend), CI-Workflows grün.
 - M1: manueller SMTP/IMAP-Handshake-Test gegen lokale VM/Container (`swaks`, `openssl s_client`, `doveadm`).
 - M3: DNS-Checker gegen Testdomain mit realen DNS-Einträgen verifizieren.
-- M6: vollständige Abnahme auf frischer Debian-12/13-VM gemäß den in der Aufgabenstellung genannten Abnahmekriterien (Open-Relay-Test, TLS-Test, DKIM-Test, Backup/Restore-Test, Rechtetrennungstest).
+- M6: vollständige Abnahme auf frischer Debian-12/13-VM gemäß den in der Aufgabenstellung genannten Abnahmekriterien (Open-Relay-Test, TLS-Test, DKIM-Test, Backup/Restore-Test, Rechtetrennungstest). Automatisiert per `scripts/acceptance-test.sh` (läuft auf dem installierten Server, deckt Open-Relay/TLS/DKIM/Rechtetrennung ab; Backup/Restore bewusst separat über `backup.sh`/`restore.sh`, da ein Test hier reale Daten überschreiben würde).
