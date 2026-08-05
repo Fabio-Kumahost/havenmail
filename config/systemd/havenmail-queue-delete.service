@@ -1,0 +1,10 @@
+[Unit]
+Description=Havenmail Mail-Warteschlangen-Löschung (getriggert durch die Control-Plane-API)
+
+[Service]
+Type=oneshot
+# Inhalt der Trigger-Datei wird von der API vorab validiert
+# (havenmail_core::mail_queue::is_valid_queue_target) — entweder das
+# Literal "ALL" oder eine reine Postfix-Queue-ID (Großbuchstaben/Ziffern),
+# nie Shell-Metazeichen. Trotzdem defensiv in doppelten Anführungszeichen.
+ExecStart=/bin/sh -c 'exec /usr/sbin/postsuper -d "$(cat /var/lib/havenmail/queue-delete-request)"'

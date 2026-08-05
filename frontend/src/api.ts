@@ -1,27 +1,39 @@
 /**
  * Havenmail Admin-Oberfläche — API-Client.
  *
- * STATUS (M4): dünner fetch-Wrapper gegen die REST-API aus M2/M3
- * (backend/crates/api). Access-Token wird im Speicher gehalten (nicht in
- * localStorage, um XSS-Exfiltration zu erschweren); Refresh-Token liegt in
- * einem HttpOnly-Cookie — Details folgen mit dem Installer/Reverse-Proxy-
- * Setup in M5. Für die aktuelle Entwicklungsphase wird der Refresh-Token
- * ebenfalls im Speicher gehalten.
+ * Tokens liegen in sessionStorage (nicht localStorage): übersteht einen
+ * Seiten-Reload, wird aber beim Schließen des Tabs/Browsers gelöscht.
+ * Ursprünglich rein In-Memory gehalten ("um XSS-Exfiltration zu
+ * erschweren") — das bedeutete aber, dass jeder Reload sofort ausgeloggt
+ * hat, da die Modul-Variablen beim Neuladen der Seite verloren gehen und
+ * RequireAuth ohne Tokens sofort zu /login umleitet. sessionStorage ist
+ * derselbe Kompromiss, den die meisten SPAs eingehen (XSS könnte die
+ * Tokens theoretisch auslesen, dasselbe Risiko wie bei localStorage) —
+ * ein echtes HttpOnly-Cookie für den Refresh-Token wäre sicherer, bräuchte
+ * aber Backend-/Reverse-Proxy-Änderungen und ist hier bewusst nicht
+ * mitgemacht worden, um den Scope dieses Fixes klein zu halten.
  */
 
 const API_BASE = import.meta.env.VITE_HAVENMAIL_API_URL ?? 'http://127.0.0.1:8080'
 
-let accessToken: string | null = null
-let refreshToken: string | null = null
+const ACCESS_TOKEN_KEY = 'havenmail_access_token'
+const REFRESH_TOKEN_KEY = 'havenmail_refresh_token'
+
+let accessToken: string | null = sessionStorage.getItem(ACCESS_TOKEN_KEY)
+let refreshToken: string | null = sessionStorage.getItem(REFRESH_TOKEN_KEY)
 
 export function setTokens(access: string, refresh: string) {
   accessToken = access
   refreshToken = refresh
+  sessionStorage.setItem(ACCESS_TOKEN_KEY, access)
+  sessionStorage.setItem(REFRESH_TOKEN_KEY, refresh)
 }
 
 export function clearTokens() {
   accessToken = null
   refreshToken = null
+  sessionStorage.removeItem(ACCESS_TOKEN_KEY)
+  sessionStorage.removeItem(REFRESH_TOKEN_KEY)
 }
 
 export function isAuthenticated() {
@@ -186,6 +198,22 @@ export interface MetricsPoint {
   virus_detected: number | null
   mail_queue_size: number | null
   disk_used_percent: number | null
+  mail_sent: number | null
+  mail_received: number | null
+}
+
+export interface QueueRecipient {
+  address: string
+  delay_reason: string | null
+}
+
+export interface QueueEntry {
+  queue_id: string
+  queue_name: string
+  arrival_time: string
+  message_size: number
+  sender: string
+  recipients: QueueRecipient[]
 }
 
 export const api = {
@@ -251,6 +279,12 @@ export const api = {
   metrics: {
     range: (range: '7d' | '30d' = '7d') =>
       request<MetricsPoint[]>('GET', `/api/v1/system/metrics?range=${range}`),
+  },
+  mailQueue: {
+    list: () => request<QueueEntry[]>('GET', '/api/v1/system/mail-queue'),
+    deleteOne: (queueId: string) =>
+      request<{ status: string }>('DELETE', `/api/v1/system/mail-queue/${queueId}`),
+    deleteAll: () => request<{ status: string }>('DELETE', '/api/v1/system/mail-queue'),
   },
 }
 

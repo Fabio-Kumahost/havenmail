@@ -66,6 +66,26 @@ havenmail_ensure_system_user() {
   if getent group clamav >/dev/null 2>&1; then
     usermod -aG clamav "$HAVENMAIL_SYSTEM_USER"
   fi
+  # `postqueue -p`/`-j` (Mail-Warteschlangen-Anzeige im Admin-Panel, siehe
+  # routes/mail_queue.rs) verbindet sich mit Postfix' showq-Socket und
+  # braucht dafür die Gruppe postdrop — normalerweise per Setgid-Bit auf
+  # dem postqueue-Binary erlangt, aber havenmail-api.service setzt
+  # NoNewPrivileges=true (blockiert jede Art von Rechte-Eskalation bei
+  # execve, auch Setgid — live geprüft: "Connect to the Postfix showq
+  # service: Permission denied"). Direkte Gruppenmitgliedschaft umgeht das
+  # sauber, ganz ohne die Härtung zu lockern (der Prozess hat die Gruppe
+  # dann schon beim Start, keine Rechte-Eskalation nötig).
+  if getent group postdrop >/dev/null 2>&1; then
+    usermod -aG postdrop "$HAVENMAIL_SYSTEM_USER"
+  fi
+  # havenmail-cli snapshot-metrics zählt gesendete/empfangene Mail über
+  # `journalctl -u postfix` (siehe mail_flow.rs) — ohne systemd-journal-
+  # Mitgliedschaft liefert journalctl für einen fremden Dienst keine
+  # Einträge ("Users in groups 'adm', 'systemd-journal' can see all
+  # messages", live geprüft). Reiner Lesezugriff, keine Rechte-Eskalation.
+  if getent group systemd-journal >/dev/null 2>&1; then
+    usermod -aG systemd-journal "$HAVENMAIL_SYSTEM_USER"
+  fi
 }
 
 # Liest einen Wert aus der Env-Datei, falls vorhanden (für Idempotenz: bei
