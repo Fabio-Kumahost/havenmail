@@ -19,6 +19,7 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/), Ve
 - Audit-Log an die API angebunden: `havenmail_core::audit::record` (neu) hängt Einträge transaktional + per Postgres-Advisory-Lock serialisiert an die Hash-Chain an (verhindert, dass gleichzeitige Requests die Kette verzweigen lassen). Migrationen `0003` (`seq`-Spalte für eindeutige Kettenreihenfolge) und `0004` (`domain_id`-Spalte für RBAC-Scoping). Verdrahtet in `domain.create/update/delete` und `user.create/update/delete` (Passwortänderungen landen nur als Aktionsname im Log, nie Klartext/Hash)
 - Neue API-Route `GET /api/v1/audit-log` (`Action::ViewAuditLog`): `super_admin` sieht alles (optional nach `domain_id` gefiltert), `domain_admin` zwingend nur die eigene Domain
 - Neue Admin-UI-Seite „Audit-Log“
+- TLS-Zertifikatslaufzeit im System-Status: certbot-Deploy-Hook (`havenmail_install_tls_expiry_hook`) schreibt bei jeder Ausstellung/Erneuerung nur das Ablaufdatum nach `/etc/havenmail/tls-expiry` (0644) — die API braucht dafür keinen Lesezugriff auf `/etc/letsencrypt` (bleibt root:root 0700, enthält den privaten Schlüssel)
 
 ### Bekannt / Noch ausstehend (nach M5)
 - Kein End-to-End-Test des gesamten Installer-/Update-/Backup-Ablaufs auf einer frischen Debian-VM (nur einzelne Bausteine lokal gegen Dev-Postgres verifiziert, nginx-Konfiguration nur manuell geprüft — kein nginx auf der Entwicklungsmaschine verfügbar)
@@ -26,7 +27,7 @@ Format angelehnt an [Keep a Changelog](https://keepachangelog.com/de/1.0.0/), Ve
 - `update.sh --major`-Versionsvergleich ist rein heuristisch (String-Vergleich von `vX`-Tags), keine echte Signatur-/Release-Prüfung
 - Backup: kein S3-Ziel, keine gestaffelte Retention, kein automatisierter Sandbox-Restore-Test, kein Einzel-Domain-Restore
 - Audit-Log ist noch nicht an aliases/distribution_lists/forwards/dkim angebunden (nur domains/users) — kein Pagination-UI (Backend deckelt bei 200 Einträgen/Abfrage, UI zeigt aktuell fix die letzten 50)
-- Admin-UI: Quotas-Übersicht, Warteschlangen, Zustellfehler, Spam-/Virenereignisse, TLS-Zertifikatslaufzeit, Backup-/Update-Status noch nicht umgesetzt
+- Admin-UI: Quotas-Übersicht, Warteschlangen, Zustellfehler, Spam-/Virenereignisse, Backup-/Update-Status noch nicht umgesetzt
 
 ### Hinzugefügt (M4: Web-UI)
 - React-Router-basierte Admin-Oberfläche: Login, Dashboard (API-Health), Domain-Liste/-Anlage, Domain-Detailseite mit Benutzer-/Alias-CRUD

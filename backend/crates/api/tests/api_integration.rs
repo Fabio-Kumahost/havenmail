@@ -378,6 +378,8 @@ async fn system_status_requires_super_admin_and_reports_database_up() {
     assert_eq!(body["database"], json!(true));
     let services = body["services"].as_array().expect("services ist ein Array");
     assert!(services.iter().any(|s| s["unit"] == "postfix"));
+    // Kein install.sh-Lauf in der Testumgebung -> keine tls-expiry-Datei.
+    assert!(body["tls"].is_null());
 
     // Ohne Token: nicht authentifiziert, keine Statusdetails preisgegeben.
     let (status, _) = call(&app, "GET", "/api/v1/system/status", None, None).await;

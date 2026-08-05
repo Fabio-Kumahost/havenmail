@@ -255,13 +255,54 @@ havenmail_deploy_nginx_full() {
 # da kein Port-Konflikt mit nginx besteht.
 havenmail_provision_tls() {
   local hostname="$1" admin_email="$2"
+
+  havenmail_install_tls_expiry_hook
+
   if [[ -d "/etc/letsencrypt/live/${hostname}" ]]; then
     havenmail_log "TLS-Zertifikat für ${hostname} bereits vorhanden — überspringe Ausstellung."
+    havenmail_write_tls_expiry_file "$hostname"
     return 0
   fi
   havenmail_log "Fordere TLS-Zertifikat für ${hostname} über Let's Encrypt an (Webroot)…"
   certbot certonly --webroot -w /var/www/havenmail-acme --non-interactive --agree-tos \
     -m "$admin_email" -d "$hostname"
+  # certbots renewal-hooks/deploy/ laufen nur bei künftigen `certbot renew`,
+  # nicht beim initialen `certonly` — deshalb hier einmalig manuell anstoßen.
+  havenmail_write_tls_expiry_file "$hostname"
+}
+
+# Schreibt NUR das Ablaufdatum (nicht den privaten Schlüssel/Zertifikatsinhalt)
+# an einen Pfad, den der unprivilegierte havenmail-Systembenutzer lesen darf
+# — /etc/letsencrypt/live bleibt root:root 0700, wie certbot es vorgibt.
+# Genutzt vom System-Status-Endpunkt (routes/system.rs) für die
+# Zertifikatslaufzeit-Anzeige im Admin-Panel.
+havenmail_write_tls_expiry_file() {
+  local hostname="$1"
+  local cert="/etc/letsencrypt/live/${hostname}/cert.pem"
+  [[ -r "$cert" ]] || return 0
+  local not_after
+  not_after="$(openssl x509 -enddate -noout -in "$cert" | cut -d= -f2)"
+  echo "$not_after" > "${HAVENMAIL_ETC_DIR}/tls-expiry"
+  chmod 0644 "${HAVENMAIL_ETC_DIR}/tls-expiry"
+}
+
+# Installiert einen certbot-Deploy-Hook, der havenmail_write_tls_expiry_file
+# bei jeder künftigen automatischen Erneuerung erneut ausführt (certbots
+# systemd-Timer ruft `certbot renew`, das alle Skripte unter
+# renewal-hooks/deploy/ startet).
+havenmail_install_tls_expiry_hook() {
+  install -d -m 0755 /etc/letsencrypt/renewal-hooks/deploy
+  cat > /etc/letsencrypt/renewal-hooks/deploy/havenmail-tls-expiry.sh <<EOF
+#!/usr/bin/env bash
+# Von install.sh generiert (havenmail_install_tls_expiry_hook). RENEWED_LINEAGE
+# wird von certbot beim Aufruf der renewal-hooks gesetzt.
+set -euo pipefail
+cert="\${RENEWED_LINEAGE}/cert.pem"
+not_after="\$(openssl x509 -enddate -noout -in "\$cert" | cut -d= -f2)"
+echo "\$not_after" > "${HAVENMAIL_ETC_DIR}/tls-expiry"
+chmod 0644 "${HAVENMAIL_ETC_DIR}/tls-expiry"
+EOF
+  chmod 0755 /etc/letsencrypt/renewal-hooks/deploy/havenmail-tls-expiry.sh
 }
 
 # Legt Domain + ersten super_admin an, sofern noch keiner existiert

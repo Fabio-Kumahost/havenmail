@@ -140,9 +140,15 @@ export interface ServiceStatus {
   detail: string
 }
 
+export interface TlsStatus {
+  expires_at: string
+  days_remaining: number | null
+}
+
 export interface SystemStatus {
   database: boolean
   services: ServiceStatus[]
+  tls: TlsStatus | null
 }
 
 export interface AuditLogEntry {

@@ -63,11 +63,37 @@ export default function System() {
               ))}
             </tbody>
           </table>
-          <p className="muted">
-            Backup-/Update-Status, TLS-Zertifikatslaufzeit, Warteschlangen und Spam-/
-            Virenereignisse sind noch nicht angebunden.
-          </p>
         </div>
+      )}
+      {status && (
+        <div className="card">
+          <h2>TLS-Zertifikat</h2>
+          {status.tls ? (
+            <p>
+              Läuft ab: {status.tls.expires_at}
+              {status.tls.days_remaining !== null && (
+                <>
+                  {' — '}
+                  <span
+                    className={`badge badge-${status.tls.days_remaining > 14 ? 'ready' : 'not_ready'}`}
+                  >
+                    {status.tls.days_remaining >= 0
+                      ? `noch ${status.tls.days_remaining} Tage`
+                      : 'abgelaufen'}
+                  </span>
+                </>
+              )}
+            </p>
+          ) : (
+            <p className="muted">Kein Zertifikatsstatus verfügbar.</p>
+          )}
+        </div>
+      )}
+      {status && (
+        <p className="muted">
+          Backup-/Update-Status, Warteschlangen und Spam-/Virenereignisse sind noch nicht
+          angebunden.
+        </p>
       )}
     </div>
   )

@@ -37,9 +37,77 @@ pub struct ServiceStatus {
 }
 
 #[derive(Debug, Serialize)]
+pub struct TlsStatus {
+    /// Rohes Ablaufdatum, wie `openssl x509 -enddate` es ausgibt (z. B.
+    /// "Nov  3 12:00:00 2026 GMT").
+    pub expires_at: String,
+    /// `None`, wenn das Datum nicht geparst werden konnte — `expires_at`
+    /// wird trotzdem angezeigt, nur ohne Tage-Countdown.
+    pub days_remaining: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct SystemStatusResponse {
     pub database: bool,
     pub services: Vec<ServiceStatus>,
+    /// `None`, solange kein Zertifikat ausgestellt wurde (z. B. lokale
+    /// Entwicklung ohne install.sh-Lauf) — siehe
+    /// scripts/lib/install_steps.sh, havenmail_write_tls_expiry_file.
+    pub tls: Option<TlsStatus>,
+}
+
+/// Liest NUR das Ablaufdatum, das install.sh/der certbot-Deploy-Hook nach
+/// `${HAVENMAIL_ETC_DIR}/tls-expiry` schreibt (0644) — die API bekommt so
+/// Sichtbarkeit auf die Zertifikatslaufzeit, ohne selbst Lesezugriff auf
+/// `/etc/letsencrypt` (root:root 0700, enthält den privaten Schlüssel) zu
+/// benötigen.
+/// Parst das openssl-`-enddate`-Format ("Nov  3 12:00:00 2026 GMT", immer
+/// GMT/UTC) zu Tagen bis zum Ablauf ab `now`. Eigene Funktion statt inline
+/// in `read_tls_status`, damit sie ohne Dateisystem/Env testbar ist.
+fn days_remaining(raw_expiry: &str, now: chrono::DateTime<chrono::Utc>) -> Option<i64> {
+    let without_tz = raw_expiry.trim().trim_end_matches("GMT").trim();
+    let naive = chrono::NaiveDateTime::parse_from_str(without_tz, "%b %e %H:%M:%S %Y").ok()?;
+    Some((naive.and_utc() - now).num_days())
+}
+
+fn read_tls_status() -> Option<TlsStatus> {
+    let etc_dir =
+        std::env::var("HAVENMAIL_ETC_DIR").unwrap_or_else(|_| "/etc/havenmail".to_string());
+    let raw = std::fs::read_to_string(format!("{etc_dir}/tls-expiry")).ok()?;
+    let expires_at = raw.trim().to_string();
+    if expires_at.is_empty() {
+        return None;
+    }
+
+    Some(TlsStatus {
+        days_remaining: days_remaining(&expires_at, chrono::Utc::now()),
+        expires_at,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn parses_openssl_enddate_format_and_computes_days_remaining() {
+        let now = chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let result = days_remaining("Jan 11 00:00:00 2026 GMT", now);
+        assert_eq!(result, Some(10));
+    }
+
+    #[test]
+    fn past_expiry_yields_negative_days() {
+        let now = chrono::Utc.with_ymd_and_hms(2026, 1, 11, 0, 0, 0).unwrap();
+        let result = days_remaining("Jan  1 00:00:00 2026 GMT", now);
+        assert_eq!(result, Some(-10));
+    }
+
+    #[test]
+    fn malformed_input_yields_none() {
+        assert_eq!(days_remaining("not a date", chrono::Utc::now()), None);
+    }
 }
 
 async fn query_unit_status(unit: &str) -> ServiceStatus {
@@ -79,5 +147,11 @@ pub async fn system_status(
         services.push(query_unit_status(unit).await);
     }
 
-    Ok(Json(SystemStatusResponse { database, services }))
+    let tls = read_tls_status();
+
+    Ok(Json(SystemStatusResponse {
+        database,
+        services,
+        tls,
+    }))
 }
