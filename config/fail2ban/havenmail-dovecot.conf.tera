@@ -1,10 +1,16 @@
 # Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
-# Fail2ban-Jail für Dovecot (fehlgeschlagene IMAP-/ManageSieve-Logins).
+# Fail2ban-Jail für Dovecot (fehlgeschlagene IMAP-/ManageSieve-Logins). Muss
+# unter /etc/fail2ban/jail.d/ liegen, NICHT filter.d/ — das ist eine
+# Jail-Definition, keine eigene Filter-Regex (fail2bans mitgeliefertes
+# dovecot.conf deckt das Log-Format bereits ab). Debian hat kein
+# /var/log/mail.log (Dovecot loggt per Default über journald), daher
+# explizit backend=systemd statt des sonst üblichen logpath.
 [dovecot]
 enabled = true
+backend = systemd
+journalmatch = _SYSTEMD_UNIT=dovecot.service
 port = imap,imaps,4190
 filter = dovecot
-logpath = /var/log/mail.log
 maxretry = 5
 findtime = 15m
 bantime = 1h

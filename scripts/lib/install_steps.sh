@@ -369,9 +369,15 @@ havenmail_deploy_mail_configs() {
   install -m 0664 -o root -g havenmail "${render_dir}/rspamd/local.d/dmarc.conf" /etc/rspamd/local.d/dmarc.conf
   install -m 0664 -o root -g havenmail "${render_dir}/rspamd/local.d/ratelimit.conf" /etc/rspamd/local.d/ratelimit.conf
 
-  install -d -m 0755 /etc/fail2ban/filter.d
-  install -m 0644 "${render_dir}/fail2ban/havenmail-postfix.conf" /etc/fail2ban/filter.d/havenmail-postfix.conf
-  install -m 0644 "${render_dir}/fail2ban/havenmail-dovecot.conf" /etc/fail2ban/filter.d/havenmail-dovecot.conf
+  # jail.d, NICHT filter.d — das sind Jail-Definitionen (referenzieren
+  # fail2bans mitgelieferte Filter), keine eigenen Filter-Regeln. Vorher
+  # fälschlich nach filter.d installiert: fail2ban lud die Dateien nie
+  # (kein Jail verweist auf einen Filter namens "havenmail-postfix"), real
+  # beobachtet als nur ein aktiver Jail ("sshd") trotz enable --quiet
+  # fail2ban.
+  install -d -m 0755 /etc/fail2ban/jail.d
+  install -m 0644 "${render_dir}/fail2ban/havenmail-postfix.conf" /etc/fail2ban/jail.d/havenmail-postfix.conf
+  install -m 0644 "${render_dir}/fail2ban/havenmail-dovecot.conf" /etc/fail2ban/jail.d/havenmail-dovecot.conf
 
   postfix check
   dovecot -n >/dev/null
@@ -507,11 +513,39 @@ havenmail_install_systemd_units() {
     /etc/systemd/system/havenmail-rspamd-reload.service
   install -m 0644 "${HAVENMAIL_REPO_DIR}/config/systemd/havenmail-rspamd-reload.path" \
     /etc/systemd/system/havenmail-rspamd-reload.path
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/systemd/havenmail-queue-delete.service" \
+    /etc/systemd/system/havenmail-queue-delete.service
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/systemd/havenmail-queue-delete.path" \
+    /etc/systemd/system/havenmail-queue-delete.path
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/systemd/havenmail-fail2ban-status.service" \
+    /etc/systemd/system/havenmail-fail2ban-status.service
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/systemd/havenmail-fail2ban-status.timer" \
+    /etc/systemd/system/havenmail-fail2ban-status.timer
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/systemd/havenmail-fail2ban-unban.service" \
+    /etc/systemd/system/havenmail-fail2ban-unban.service
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/systemd/havenmail-fail2ban-unban.path" \
+    /etc/systemd/system/havenmail-fail2ban-unban.path
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/systemd/havenmail-backup.service" \
+    /etc/systemd/system/havenmail-backup.service
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/systemd/havenmail-backup.timer" \
+    /etc/systemd/system/havenmail-backup.timer
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/systemd/havenmail-backup-trigger.path" \
+    /etc/systemd/system/havenmail-backup-trigger.path
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/systemd/havenmail-notify-check.service" \
+    /etc/systemd/system/havenmail-notify-check.service
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/systemd/havenmail-notify-check.timer" \
+    /etc/systemd/system/havenmail-notify-check.timer
 
   systemctl daemon-reload
   systemctl enable --quiet havenmail-api.service
   systemctl enable --quiet --now havenmail-metrics-snapshot.timer
   systemctl enable --quiet --now havenmail-rspamd-reload.path
+  systemctl enable --quiet --now havenmail-queue-delete.path
+  systemctl enable --quiet --now havenmail-fail2ban-status.timer
+  systemctl enable --quiet --now havenmail-fail2ban-unban.path
+  systemctl enable --quiet --now havenmail-backup.timer
+  systemctl enable --quiet --now havenmail-backup-trigger.path
+  systemctl enable --quiet --now havenmail-notify-check.timer
 
 }
 

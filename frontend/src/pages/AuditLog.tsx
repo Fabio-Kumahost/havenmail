@@ -2,6 +2,23 @@ import { useEffect, useState } from 'react'
 import { api, ApiError, type AuditLogEntry } from '../api'
 
 /**
+ * Kurzfassung von `before`/`after` für die Übersichtstabelle — z. B. die
+ * Klartext-Meldung eines Benachrichtigungs-Checks (`{"message": "..."}`,
+ * siehe havenmail-cli notify-check) oder ein knapper JSON-Auszug für
+ * andere Aktionen. Kein Ersatz für eine vollständige Detailansicht, nur
+ * damit die Tabelle nicht nur den rohen Aktionsnamen zeigt.
+ */
+function summarizeDetails(value: unknown): string {
+  if (value == null) return '—'
+  if (typeof value === 'object' && value !== null && 'message' in value) {
+    const message = (value as { message?: unknown }).message
+    if (typeof message === 'string') return message
+  }
+  const json = JSON.stringify(value)
+  return json.length > 80 ? `${json.slice(0, 80)}…` : json
+}
+
+/**
  * Zeigt die letzten Einträge der unveränderlichen Audit-Log-Hash-Chain
  * (havenmail_core::audit). super_admin sieht alle Domains, domain_admin
  * nur die eigene (serverseitig erzwungen, siehe routes/audit.rs) — die
@@ -39,6 +56,7 @@ export default function AuditLog() {
                 <th>Zeitpunkt</th>
                 <th>Aktion</th>
                 <th>Ziel</th>
+                <th>Details</th>
                 <th>IP</th>
               </tr>
             </thead>
@@ -48,6 +66,7 @@ export default function AuditLog() {
                   <td>{new Date(entry.created_at).toLocaleString('de-DE')}</td>
                   <td>{entry.action}</td>
                   <td>{entry.target}</td>
+                  <td className="muted">{summarizeDetails(entry.after ?? entry.before)}</td>
                   <td>{entry.ip ?? '—'}</td>
                 </tr>
               ))}

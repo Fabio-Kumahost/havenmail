@@ -118,6 +118,11 @@ export interface User {
   created_at: string
 }
 
+export interface UserStorage {
+  id: string
+  bytes: number | null
+}
+
 export interface Alias {
   id: string
   domain_id: string
@@ -216,6 +221,34 @@ export interface QueueEntry {
   recipients: QueueRecipient[]
 }
 
+export interface JailStatus {
+  name: string
+  banned: string[]
+}
+
+export interface Fail2banStatus {
+  updated_at: string
+  jails: JailStatus[]
+}
+
+export interface BackupHistoryEntry {
+  filename: string
+  size_bytes: number
+  created_at: string
+}
+
+export interface BackupLastRun {
+  status: 'success' | 'failed'
+  ran_at: string
+  archive?: string
+  error?: string
+}
+
+export interface BackupStatus {
+  last_run: BackupLastRun | null
+  history: BackupHistoryEntry[]
+}
+
 export const api = {
   login: (email: string, password: string) =>
     request<TokenResponse>('POST', '/api/v1/auth/login', { email, password }),
@@ -234,6 +267,8 @@ export const api = {
     update: (id: string, patch: { is_active?: boolean; password?: string; quota_bytes?: number }) =>
       request<User>('PATCH', `/api/v1/users/${id}`, patch),
     delete: (id: string) => request<void>('DELETE', `/api/v1/users/${id}`),
+    storage: (domainId: string) =>
+      request<UserStorage[]>('GET', `/api/v1/domains/${domainId}/users/storage`),
   },
   aliases: {
     list: (domainId: string) => request<Alias[]>('GET', `/api/v1/domains/${domainId}/aliases`),
@@ -285,6 +320,15 @@ export const api = {
     deleteOne: (queueId: string) =>
       request<{ status: string }>('DELETE', `/api/v1/system/mail-queue/${queueId}`),
     deleteAll: () => request<{ status: string }>('DELETE', '/api/v1/system/mail-queue'),
+  },
+  fail2ban: {
+    status: () => request<Fail2banStatus>('GET', '/api/v1/system/fail2ban'),
+    unban: (jail: string, ip: string) =>
+      request<{ status: string }>('POST', '/api/v1/system/fail2ban/unban', { jail, ip }),
+  },
+  backup: {
+    status: () => request<BackupStatus>('GET', '/api/v1/system/backup'),
+    trigger: () => request<{ status: string }>('POST', '/api/v1/system/backup/trigger'),
   },
 }
 

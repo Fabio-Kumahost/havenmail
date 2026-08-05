@@ -22,6 +22,8 @@ import System from './pages/System'
 import AuditLog from './pages/AuditLog'
 import SpamSettings from './pages/SpamSettings'
 import VirusSettings from './pages/VirusSettings'
+import Fail2Ban from './pages/Fail2Ban'
+import Backup from './pages/Backup'
 import Account from './pages/Account'
 import './App.css'
 
@@ -38,6 +40,8 @@ function App() {
               <Route path="/domains/:domainId" element={<DomainDetail />} />
               <Route path="/spam-settings" element={<SpamSettings />} />
               <Route path="/virus-settings" element={<VirusSettings />} />
+              <Route path="/fail2ban" element={<Fail2Ban />} />
+              <Route path="/backup" element={<Backup />} />
               <Route path="/system" element={<System />} />
               <Route path="/audit-log" element={<AuditLog />} />
               <Route path="/account" element={<Account />} />

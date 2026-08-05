@@ -50,6 +50,19 @@ const ICONS = {
       <path d="M4.5 20c1.4-3.6 4.4-5.5 7.5-5.5s6.1 1.9 7.5 5.5" />
     </svg>
   ),
+  shield: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 3 5 6v5c0 5 3 8.5 7 10 4-1.5 7-5 7-10V6l-7-3Z" />
+      <path d="m9.5 12 1.8 1.8L15 10" />
+    </svg>
+  ),
+  backup: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M12 3v12" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" />
+    </svg>
+  ),
   logout: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
@@ -86,6 +99,14 @@ export default function Layout() {
         <NavLink to="/virus-settings">
           {ICONS.virus}
           <span>Virenschutz</span>
+        </NavLink>
+        <NavLink to="/fail2ban">
+          {ICONS.shield}
+          <span>Fail2Ban</span>
+        </NavLink>
+        <NavLink to="/backup">
+          {ICONS.backup}
+          <span>Backup</span>
         </NavLink>
         <NavLink to="/system">
           {ICONS.system}

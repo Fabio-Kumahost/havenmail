@@ -1,0 +1,6 @@
+[Unit]
+Description=Havenmail Fail2Ban-Entsperrung (getriggert durch die Control-Plane-API)
+
+[Service]
+Type=oneshot
+ExecStart=/opt/havenmail/backend/target/release/havenmail-cli fail2ban-unban --request-file /var/lib/havenmail/fail2ban-unban-request

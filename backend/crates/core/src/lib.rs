@@ -13,9 +13,14 @@ pub mod config_render;
 pub mod db;
 pub mod dkim;
 pub mod dns_check;
+pub mod fail2ban;
 pub mod mail_flow;
 pub mod mail_queue;
+pub mod mailbox_storage;
+pub mod notify;
 pub mod rbac;
 pub mod rspamd_client;
+pub mod service_status;
+pub mod tls_status;
 
 pub use rbac::{Action, Actor, Role};

@@ -1,0 +1,9 @@
+[Unit]
+Description=Periodische Havenmail Fail2Ban-Status-Aktualisierung
+
+[Timer]
+OnBootSec=15s
+OnUnitActiveSec=30s
+
+[Install]
+WantedBy=timers.target

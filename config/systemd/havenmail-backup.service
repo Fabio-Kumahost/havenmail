@@ -1,0 +1,8 @@
+[Unit]
+Description=Havenmail Backup (manuell oder automatisch getriggert)
+After=postgresql.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/havenmail/havenmail.env
+ExecStart=/opt/havenmail/backend/target/release/havenmail-cli backup-run
