@@ -433,6 +433,9 @@ async fn snapshot_metrics(
     let signature_age = havenmail_core::clamav_stats::signature_age(clamav_lib_dir);
     let queue_size = havenmail_core::mail_queue::queue_size().await;
     let disk_used_percent = disk_used_percent(mail_spool_path).await;
+    // Gleicher "since"-Anker wie ClamAV: Zeitraum seit dem letzten
+    // Snapshot (bzw. 1h zurück beim allerersten Lauf).
+    let (mail_sent, mail_received) = havenmail_core::mail_flow::counts_since(clamav_since).await;
 
     sqlx::query(
         r#"
@@ -440,8 +443,9 @@ async fn snapshot_metrics(
             rspamd_scanned, rspamd_spam_count, rspamd_ham_count,
             rspamd_action_reject, rspamd_action_add_header, rspamd_action_greylist, rspamd_action_no_action,
             clamav_detected_since_last, clamav_signature_age_hours,
-            mail_queue_size, disk_used_percent
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            mail_queue_size, disk_used_percent,
+            mail_sent_count, mail_received_count
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         "#,
     )
     .bind(stat.as_ref().map(|s| s.scanned as i64))
@@ -455,6 +459,8 @@ async fn snapshot_metrics(
     .bind(signature_age.map(|h| h as i32))
     .bind(queue_size.map(|q| q as i32))
     .bind(disk_used_percent)
+    .bind(mail_sent as i32)
+    .bind(mail_received as i32)
     .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
@@ -465,6 +471,8 @@ async fn snapshot_metrics(
         "clamav_detected_since_last": clamav_detected,
         "mail_queue_size": queue_size,
         "disk_used_percent": disk_used_percent,
+        "mail_sent": mail_sent,
+        "mail_received": mail_received,
     }))
 }
 

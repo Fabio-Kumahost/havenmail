@@ -13,6 +13,7 @@ pub mod config_render;
 pub mod db;
 pub mod dkim;
 pub mod dns_check;
+pub mod mail_flow;
 pub mod mail_queue;
 pub mod rbac;
 pub mod rspamd_client;

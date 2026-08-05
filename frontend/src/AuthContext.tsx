@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, type ReactNode } from 'react'
-import { api, setTokens, clearTokens, ApiError } from './api'
+import { api, setTokens, clearTokens, isAuthenticated, ApiError } from './api'
 
 interface AuthContextValue {
   loggedIn: boolean
@@ -10,7 +10,11 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [loggedIn, setLoggedIn] = useState(false)
+  // isAuthenticated() liest Tokens, die api.ts beim Modul-Start aus
+  // sessionStorage wiederhergestellt hat — sonst würde jeder Reload
+  // fälschlich als "ausgeloggt" starten, bevor RequireAuth überhaupt
+  // einen API-Call machen konnte.
+  const [loggedIn, setLoggedIn] = useState(isAuthenticated())
 
   async function login(email: string, password: string) {
     const tokens = await api.login(email, password)

@@ -5,6 +5,7 @@ pub mod distribution_lists;
 pub mod dns;
 pub mod domains;
 pub mod forwards;
+pub mod mail_queue;
 pub mod security_settings;
 pub mod system;
 pub mod users;
@@ -91,6 +92,14 @@ pub fn router() -> Router<AppState> {
         .route(
             "/api/v1/system/virus-settings",
             patch(security_settings::update_virus_settings),
+        )
+        .route(
+            "/api/v1/system/mail-queue",
+            get(mail_queue::list_mail_queue).delete(mail_queue::delete_all_queue),
+        )
+        .route(
+            "/api/v1/system/mail-queue/:queue_id",
+            delete(mail_queue::delete_queue_entry),
         )
         .route("/api/v1/audit-log", get(audit::list_audit_log))
 }

@@ -145,6 +145,8 @@ struct MetricsSnapshotRow {
     clamav_detected_since_last: Option<i32>,
     mail_queue_size: Option<i32>,
     disk_used_percent: Option<f32>,
+    mail_sent_count: Option<i32>,
+    mail_received_count: Option<i32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -161,6 +163,9 @@ pub struct MetricsPoint {
     pub virus_detected: Option<i32>,
     pub mail_queue_size: Option<i32>,
     pub disk_used_percent: Option<f32>,
+    /// Bereits Deltas zum Zeitpunkt der Messung, wie `virus_detected`.
+    pub mail_sent: Option<i32>,
+    pub mail_received: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -202,6 +207,8 @@ fn compute_deltas(rows: Vec<MetricsSnapshotRow>) -> Vec<MetricsPoint> {
             virus_detected: row.clamav_detected_since_last,
             mail_queue_size: row.mail_queue_size,
             disk_used_percent: row.disk_used_percent,
+            mail_sent: row.mail_sent_count,
+            mail_received: row.mail_received_count,
         });
         prev = Some(row);
     }
@@ -227,7 +234,8 @@ pub async fn system_metrics(
     let rows: Vec<MetricsSnapshotRow> = sqlx::query_as(
         r#"
         SELECT captured_at, rspamd_scanned, rspamd_spam_count, rspamd_ham_count,
-               rspamd_action_reject, clamav_detected_since_last, mail_queue_size, disk_used_percent
+               rspamd_action_reject, clamav_detected_since_last, mail_queue_size, disk_used_percent,
+               mail_sent_count, mail_received_count
         FROM metrics_snapshots
         WHERE captured_at > now() - make_interval(days => $1)
         ORDER BY captured_at ASC
@@ -279,6 +287,8 @@ mod tests {
             clamav_detected_since_last: Some(0),
             mail_queue_size: Some(2),
             disk_used_percent: Some(12.5),
+            mail_sent_count: Some(1),
+            mail_received_count: Some(1),
         }
     }
 

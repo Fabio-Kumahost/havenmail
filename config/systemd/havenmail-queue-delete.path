@@ -1,0 +1,9 @@
+[Unit]
+Description=Beobachtet die Mail-Warteschlangen-Loeschungs-Trigger-Datei der Control-Plane-API
+
+[Path]
+PathModified=/var/lib/havenmail/queue-delete-request
+Unit=havenmail-queue-delete.service
+
+[Install]
+WantedBy=multi-user.target
