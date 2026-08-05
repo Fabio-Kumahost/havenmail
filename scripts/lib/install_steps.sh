@@ -220,6 +220,19 @@ havenmail_render_configs() {
       { print }
     ' "$mail_conf" > "$compat_conf"
     mv "$compat_conf" "$mail_conf"
+
+    local master_conf
+    master_conf="${HAVENMAIL_RENDER_DIR}/dovecot/10-master.conf"
+    compat_conf="$(mktemp)"
+    awk '
+      /^[[:space:]]+address[[:space:]]*=[[:space:]]*127\.0\.0\.1[[:space:]]*$/ { next }
+      { print }
+      END {
+        print ""
+        print "inet_listener_sieve_address = 127.0.0.1"
+      }
+    ' "$master_conf" > "$compat_conf"
+    mv "$compat_conf" "$master_conf"
   fi
 }
 
