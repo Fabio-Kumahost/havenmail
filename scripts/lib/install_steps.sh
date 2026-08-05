@@ -232,6 +232,23 @@ havenmail_render_configs() {
       { print }
     ' "$master_conf" > "$compat_conf"
     mv "$compat_conf" "$master_conf"
+
+    local ssl_conf
+    ssl_conf="${HAVENMAIL_RENDER_DIR}/dovecot/10-ssl.conf"
+    compat_conf="$(mktemp)"
+    awk '
+      /^ssl_cert[[:space:]]*=/ {
+        sub(/^ssl_cert/, "ssl_server_cert_file")
+      }
+      /^ssl_key[[:space:]]*=/ {
+        sub(/^ssl_key/, "ssl_server_key_file")
+      }
+      /^ssl_prefer_server_ciphers[[:space:]]*=/ {
+        sub(/^ssl_prefer_server_ciphers/, "ssl_server_prefer_ciphers")
+      }
+      { print }
+    ' "$ssl_conf" > "$compat_conf"
+    mv "$compat_conf" "$ssl_conf"
   fi
 }
 
