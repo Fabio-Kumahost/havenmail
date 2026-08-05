@@ -245,6 +245,7 @@ havenmail_render_configs() {
       }
       /^ssl_prefer_server_ciphers[[:space:]]*=/ {
         sub(/^ssl_prefer_server_ciphers/, "ssl_server_prefer_ciphers")
+        sub(/[[:space:]]*=[[:space:]]*yes[[:space:]]*$/, " = server")
       }
       { print }
     ' "$ssl_conf" > "$compat_conf"
