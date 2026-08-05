@@ -20,7 +20,7 @@ jsonwebtoken = "9"
 totp-rs = { version = "5", features = ["gen_secret", "otpauth"] }
 sha2 = "0.10"
 thiserror = "1"
-tera = "1"
+tera = "2"
 rsa = { version = "0.9", features = ["pem", "sha2"] }
 aes-gcm = "0.10"
 base64 = "0.22"
