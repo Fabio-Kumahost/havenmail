@@ -146,6 +146,13 @@ EOF
 
 havenmail_configure_postgres() {
   local db_password
+  # apt startet den postgresql-Dienst auf einem normalen System zwar
+  # üblicherweise automatisch beim Paket-Postinst — das ist aber implizites
+  # Verhalten, keine Garantie (in einem Container mit policy-rc.d-Sperre
+  # real fehlgeschlagen: "connection to server on socket ... failed: No
+  # such file or directory"). enable --now ist idempotent und harmlos,
+  # falls der Dienst schon läuft.
+  systemctl enable --quiet --now postgresql 2>/dev/null || true
   db_password="$(havenmail_env_get HAVENMAIL_DB_PASSWORD)"
   havenmail_log "Richte PostgreSQL-Rolle und Datenbank ein (idempotent)…"
   # runuser statt sudo -u: sudo ist auf einem frischen Minimal-Debian nicht

@@ -78,9 +78,17 @@ else
     echo "Fehler: Dieses Skript muss als root (bzw. mit sudo) ausgeführt werden." >&2
     exit 1
   fi
+  # Auf einem frischen Debian ist git noch nicht zwingend installiert, wird
+  # aber für den Self-Bootstrap benötigt. Deshalb vor dem ersten clone
+  # minimal nachinstallieren; die vollständige Paketliste folgt später.
   if ! command -v git >/dev/null 2>&1; then
-    echo "Fehler: git wird benötigt, um den vollständigen Quellcode zu holen." >&2
-    exit 1
+    if ! command -v apt-get >/dev/null 2>&1; then
+      echo "Fehler: git fehlt und apt-get wurde nicht gefunden." >&2
+      exit 1
+    fi
+    echo "Installiere git für den Self-Bootstrap…"
+    DEBIAN_FRONTEND=noninteractive apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq git
   fi
 
   HAVENMAIL_REPO_DIR="${HAVENMAIL_REPO_DIR:-/opt/havenmail}"
@@ -88,6 +96,7 @@ else
   if [[ -d "${HAVENMAIL_REPO_DIR}/.git" ]]; then
     git -C "$HAVENMAIL_REPO_DIR" fetch --quiet origin
     git -C "$HAVENMAIL_REPO_DIR" checkout --quiet "$VERSION_REF"
+    git -C "$HAVENMAIL_REPO_DIR" reset --quiet --hard "origin/${VERSION_REF}"
   else
     git clone --quiet --branch "$VERSION_REF" \
       "${HAVENMAIL_SOURCE_REPO:-https://github.com/Fabio-Kumahost/havenmail.git}" \
@@ -124,11 +133,21 @@ if [[ "$UNATTENDED" -eq 1 ]]; then
   : "${HAVENMAIL_ADMIN_EMAIL:?--unattended benötigt HAVENMAIL_ADMIN_EMAIL}"
   : "${HAVENMAIL_TIMEZONE:?--unattended benötigt HAVENMAIL_TIMEZONE}"
 else
-  read -rp "Mail-Domain (z. B. example.org): " HAVENMAIL_DOMAIN
-  read -rp "Mail-Hostname (z. B. mail.example.org): " HAVENMAIL_HOSTNAME
-  read -rp "Admin-E-Mail für TLS-Benachrichtigungen (z. B. admin@example.org): " HAVENMAIL_ADMIN_EMAIL
-  read -rp "Zeitzone [Europe/Berlin]: " HAVENMAIL_TIMEZONE
+  # Bei `curl | sudo bash` enthält stdin den noch nicht eingelesenen
+  # Skripttext. Interaktive Antworten müssen deshalb vom Terminal kommen,
+  # sonst wird versehentlich eine Kommentar-/Quellcodezeile als Hostname
+  # übernommen (z. B. `server_name # --- ...`).
+  if [[ ! -r /dev/tty ]]; then
+    echo "Fehler: Kein interaktives Terminal gefunden — nutze --unattended mit HAVENMAIL_*-Variablen." >&2
+    exit 1
+  fi
+  exec 3</dev/tty
+  read -r -p "Mail-Domain (z. B. example.org): " HAVENMAIL_DOMAIN <&3
+  read -r -p "Mail-Hostname (z. B. mail.example.org): " HAVENMAIL_HOSTNAME <&3
+  read -r -p "Admin-E-Mail für TLS-Benachrichtigungen (z. B. admin@example.org): " HAVENMAIL_ADMIN_EMAIL <&3
+  read -r -p "Zeitzone [Europe/Berlin]: " HAVENMAIL_TIMEZONE <&3
   HAVENMAIL_TIMEZONE="${HAVENMAIL_TIMEZONE:-Europe/Berlin}"
+  exec 3<&-
 fi
 ADMIN_LOCAL_PART="${HAVENMAIL_ADMIN_EMAIL%%@*}"
 
