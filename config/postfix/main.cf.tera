@@ -8,9 +8,9 @@ myhostname = {{ mail_hostname }}
 smtpd_banner = $myhostname ESMTP
 
 # --- Zustellung: nur eigene virtuelle Domains, kein Open Relay ---
-virtual_mailbox_domains = pgsql:/etc/havenmail/postfix/pgsql-virtual-domains.cf
-virtual_mailbox_maps = pgsql:/etc/havenmail/postfix/pgsql-virtual-mailboxes.cf
-virtual_alias_maps = pgsql:/etc/havenmail/postfix/pgsql-virtual-aliases.cf
+virtual_mailbox_domains = pgsql:/etc/postfix/havenmail/pgsql-virtual-domains.cf
+virtual_mailbox_maps = pgsql:/etc/postfix/havenmail/pgsql-virtual-mailboxes.cf
+virtual_alias_maps = pgsql:/etc/postfix/havenmail/pgsql-virtual-aliases.cf
 virtual_mailbox_base = /var/mail/havenmail
 virtual_minimum_uid = 5000
 virtual_uid_maps = static:5000

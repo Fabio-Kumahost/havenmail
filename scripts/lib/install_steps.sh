@@ -201,6 +201,26 @@ havenmail_render_configs() {
     --tls-key-path "/etc/letsencrypt/live/${mail_hostname}/privkey.pem" \
     --frontend-dist-dir "${HAVENMAIL_REPO_DIR}/frontend/dist" \
     --api-bind "$(havenmail_env_get HAVENMAIL_API_BIND)"
+
+  # Dovecot 2.4 replaced the legacy mail_location setting with the
+  # mail_driver/mail_path pair. Debian 12 still ships Dovecot 2.3, so keep
+  # the template portable and adapt only the rendered file on 2.4 hosts.
+  local dovecot_version mail_conf compat_conf
+  dovecot_version="$(dovecot --version 2>/dev/null | awk '{print $1}')"
+  if [[ "$dovecot_version" == 2.4* ]]; then
+    mail_conf="${HAVENMAIL_RENDER_DIR}/dovecot/10-mail.conf"
+    compat_conf="$(mktemp)"
+    awk '
+      /^mail_location[[:space:]]*=[[:space:]]*maildir:/ {
+        sub(/^[^:]*:[[:space:]]*/, "")
+        print "mail_driver = maildir"
+        print "mail_path = " $0
+        next
+      }
+      { print }
+    ' "$mail_conf" > "$compat_conf"
+    mv "$compat_conf" "$mail_conf"
+  fi
 }
 
 # Kopiert die gerenderte Postfix-/Dovecot-/Rspamd-/Fail2ban-Konfiguration an
