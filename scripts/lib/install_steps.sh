@@ -331,6 +331,7 @@ havenmail_deploy_mail_configs() {
   install -m 0640 -o root -g postfix "${render_dir}/postfix/pgsql-virtual-domains.cf" /etc/postfix/havenmail/
   install -m 0640 -o root -g postfix "${render_dir}/postfix/pgsql-virtual-mailboxes.cf" /etc/postfix/havenmail/
   install -m 0640 -o root -g postfix "${render_dir}/postfix/pgsql-virtual-aliases.cf" /etc/postfix/havenmail/
+  install -m 0640 -o root -g postfix "${render_dir}/postfix/pgsql-sender-login-maps.cf" /etc/postfix/havenmail/
 
   install -d -m 0755 /etc/dovecot/conf.d
   install -m 0644 "${render_dir}/dovecot/10-mail.conf" /etc/dovecot/conf.d/10-mail.conf

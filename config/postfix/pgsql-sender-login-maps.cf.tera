@@ -1,0 +1,14 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+# smtpd_sender_login_maps: welcher SASL-Benutzername darf mit welcher
+# Absenderadresse senden (siehe reject_sender_login_mismatch in
+# master.cf.append für submission/smtps). Ohne diese Map lehnt Postfix
+# grundsätzlich JEDEN Versand ab, da reject_sender_login_mismatch ohne
+# Map keine Adresse als "owned" erkennen kann (real beobachtet: 553
+# "Sender address rejected: not owned by user ..." für jeden Absender).
+# Identität lokal_teil@domain == SASL-Login, daher reicht die
+# bestehende postfix_virtual_mailboxes-View mit email statt maildir.
+hosts = {{ db_host }}:{{ db_port }}
+user = {{ db_user }}
+password = {{ db_password }}
+dbname = {{ db_name }}
+query = SELECT email FROM postfix_virtual_mailboxes WHERE email='%s'
