@@ -471,3 +471,83 @@ async fn audit_log_records_domain_mutations_and_scopes_domain_admin() {
     let (status, _) = call(&app, "GET", "/api/v1/audit-log", None, None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn audit_log_covers_aliases_distribution_lists_and_dkim() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (super_email, super_password) = bootstrap_super_admin(&db).await;
+    let super_token = login(&app, &super_email, &super_password).await;
+
+    let domain_name = format!("audit-alias-{}.test", Uuid::new_v4());
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": domain_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let domain_id = body["id"].as_str().unwrap().to_string();
+
+    let (status, body) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_id}/aliases"),
+        Some(&super_token),
+        Some(json!({ "source": format!("info@{domain_name}"), "destinations": [format!("admin@{domain_name}")] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let alias_id = body["id"].as_str().unwrap().to_string();
+
+    let (status, body) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_id}/distribution-lists"),
+        Some(&super_token),
+        Some(json!({ "address": format!("team@{domain_name}"), "members": [format!("admin@{domain_name}")] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+
+    let (status, body) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_id}/dkim"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+
+    let (status, _) = call(
+        &app,
+        "DELETE",
+        &format!("/api/v1/aliases/{alias_id}"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, body) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/audit-log?domain_id={domain_id}"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let entries = body.as_array().expect("audit-log ist ein Array");
+    for expected_action in ["alias.create", "alias.delete", "distribution_list.create", "dkim.generate"] {
+        assert!(
+            entries.iter().any(|e| e["action"] == expected_action),
+            "erwartete Aktion '{expected_action}' fehlt im Audit-Log: {entries:?}"
+        );
+    }
+}

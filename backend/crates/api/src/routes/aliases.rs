@@ -3,6 +3,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 use axum::{
     extract::{Path, State},
+    http::HeaderMap,
     Json,
 };
 use havenmail_core::rbac::Action;
@@ -29,6 +30,7 @@ pub async fn create_alias(
     State(state): State<AppState>,
     AuthUser(actor): AuthUser,
     Path(domain_id): Path<Uuid>,
+    headers: HeaderMap,
     Json(req): Json<CreateAliasRequest>,
 ) -> ApiResult<Json<Alias>> {
     if !actor.can(Action::ManageDomain, Some(domain_id)) {
@@ -59,6 +61,18 @@ pub async fn create_alias(
         _ => ApiError::Internal(e),
     })?;
 
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "alias.create",
+        &alias.id.to_string(),
+        Some(domain_id),
+        None,
+        serde_json::to_value(&alias).ok(),
+    )
+    .await;
+
     Ok(Json(alias))
 }
 
@@ -83,20 +97,36 @@ pub async fn delete_alias(
     State(state): State<AppState>,
     AuthUser(actor): AuthUser,
     Path(alias_id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let domain_id: Option<Uuid> = sqlx::query_scalar("SELECT domain_id FROM aliases WHERE id = $1")
-        .bind(alias_id)
-        .fetch_optional(&state.db)
-        .await?;
-    let Some(domain_id) = domain_id else {
+    let existing: Option<Alias> = sqlx::query_as(
+        "SELECT id, domain_id, source, destinations, is_active FROM aliases WHERE id = $1",
+    )
+    .bind(alias_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let Some(existing) = existing else {
         return Err(ApiError::NotFound);
     };
-    if !actor.can(Action::ManageDomain, Some(domain_id)) {
+    if !actor.can(Action::ManageDomain, Some(existing.domain_id)) {
         return Err(ApiError::NotFound);
     }
     sqlx::query("DELETE FROM aliases WHERE id = $1")
         .bind(alias_id)
         .execute(&state.db)
         .await?;
+
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "alias.delete",
+        &alias_id.to_string(),
+        Some(existing.domain_id),
+        serde_json::to_value(&existing).ok(),
+        None,
+    )
+    .await;
+
     Ok(Json(serde_json::json!({ "status": "deleted" })))
 }

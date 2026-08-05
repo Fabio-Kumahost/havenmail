@@ -20,6 +20,9 @@ Nach diesen Fixes lief der komplette Installer-Ablauf (Pakete → Build → Conf
 - `install.sh`/`update.sh`/`restore.sh`: `--help` dokumentierte für `--version`/`--target` die Leerzeichen-Syntax (`--target <datei>`), der Parser akzeptierte aber nur `--target=datei` — beim eigenen End-to-End-Test von `restore.sh` selbst aufgefallen. Alle drei Skripte akzeptieren jetzt beide Schreibweisen (`install.sh` sichert dafür `$@` vor dem Parsen in `ORIGINAL_ARGS`, da es für den Self-Bootstrap-Re-Exec weiter unten noch gebraucht wird)
 - macOS-Metadaten-Dateien (`._*`, AppleDouble-Sidecars von `tar`/Finder) im `migrations`-Verzeichnis brechen `sqlx::migrate!` ("expected integer version prefix") — trat sowohl im Testcontainer (Kopie per `tar`) als auch beim Nutzer auf der echten VM (Transfer per `tar über ssh` vom Mac) auf. Kein Codefix nötig (kein Repo-Inhalt, git verfolgt diese Dateien nicht), aber docs/installation.md ergänzt: `COPYFILE_DISABLE=1` beim `tar`-Transfer vom Mac setzen
 
+### Audit-Log jetzt vollständig (alle Mutationen)
+`alias.create/delete`, `distribution_list.create/delete`, `forward.create/delete`, `dkim.generate` protokolliert (bisher nur `domain.*`/`user.*`). Neuer Integrationstest deckt alle vier neuen Ressourcentypen ab.
+
 ### Hinzugefügt (M5: Installer & Betrieb)
 - `install.sh` implementiert vollständig: Preflight, Self-Bootstrap (Single-File-curl vs. bestehendes Checkout), Systembenutzer/-verzeichnisse, apt-Pakete, Rust-/Node-Toolchain-Install, PostgreSQL-Rolle/DB, zweiphasiger nginx-/TLS-Rollout (Übergangs-vhost → certbot Webroot → voller HTTPS-Vhost), Backend-/Frontend-Build, Deployment der gerenderten Postfix-/Dovecot-/Rspamd-/Fail2ban-/nginx-Konfiguration an ihre Systempfade, Firewall (ufw), systemd-Unit, Dienststart, Health-Check
 - `config/nginx/havenmail-http.conf.tera` (Übergangs-vhost für die ACME-Challenge) und `havenmail.conf.tera` (voller HTTPS-Vhost: reverse-proxied `/api/`, `/healthz`, `/readyz` zur Control-Plane, liefert den Frontend-Build mit SPA-Fallback aus). Frontend wird mit `VITE_HAVENMAIL_API_URL=""` gebaut — same-origin, kein CORS nötig
@@ -43,7 +46,7 @@ Nach diesen Fixes lief der komplette Installer-Ablauf (Pakete → Build → Conf
 - Repo ist noch nicht auf GitHub veröffentlicht — der dokumentierte Single-File-curl-Einzeiler funktioniert erst danach (`HAVENMAIL_SOURCE_REPO`/`USERNAME`-Platzhalter)
 - `update.sh --major`-Versionsvergleich ist rein heuristisch (String-Vergleich von `vX`-Tags), keine echte Signatur-/Release-Prüfung
 - Backup: kein S3-Ziel, keine gestaffelte Retention, kein automatisierter Sandbox-Restore-Test, kein Einzel-Domain-Restore
-- Audit-Log ist noch nicht an aliases/distribution_lists/forwards/dkim angebunden (nur domains/users) — kein Pagination-UI (Backend deckelt bei 200 Einträgen/Abfrage, UI zeigt aktuell fix die letzten 50)
+- Audit-Log: kein Pagination-UI (Backend deckelt bei 200 Einträgen/Abfrage, UI zeigt aktuell fix die letzten 50)
 - Admin-UI: Quotas-Übersicht, Warteschlangen, Zustellfehler, Spam-/Virenereignisse, Backup-/Update-Status noch nicht umgesetzt
 
 ### Hinzugefügt (M4: Web-UI)

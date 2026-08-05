@@ -6,6 +6,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 use axum::{
     extract::{Path, State},
+    http::HeaderMap,
     Json,
 };
 use havenmail_core::rbac::Action;
@@ -41,6 +42,7 @@ pub async fn generate_dkim_key(
     State(state): State<AppState>,
     AuthUser(actor): AuthUser,
     Path(domain_id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> ApiResult<Json<DkimKeyResponse>> {
     if !actor.can(Action::ManageDomain, Some(domain_id)) {
         return Err(ApiError::Forbidden);
@@ -68,11 +70,27 @@ pub async fn generate_dkim_key(
     .execute(&state.db)
     .await?;
 
-    Ok(Json(DkimKeyResponse {
+    let response = DkimKeyResponse {
         selector: domain.dkim_selector.clone(),
         dns_record_name: format!("{}._domainkey.{}", domain.dkim_selector, domain.name),
         dns_record_value: generated.dns_txt_value,
-    }))
+    };
+
+    // Nur den öffentlichen DNS-TXT-Wert protokollieren (ohnehin zur
+    // Veröffentlichung bestimmt) — der private Schlüssel taucht hier nie auf.
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "dkim.generate",
+        &domain_id.to_string(),
+        Some(domain_id),
+        None,
+        serde_json::to_value(&response).ok(),
+    )
+    .await;
+
+    Ok(Json(response))
 }
 
 #[derive(Debug, Serialize)]

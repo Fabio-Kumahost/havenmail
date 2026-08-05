@@ -85,31 +85,6 @@ fn read_tls_status() -> Option<TlsStatus> {
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chrono::TimeZone;
-
-    #[test]
-    fn parses_openssl_enddate_format_and_computes_days_remaining() {
-        let now = chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
-        let result = days_remaining("Jan 11 00:00:00 2026 GMT", now);
-        assert_eq!(result, Some(10));
-    }
-
-    #[test]
-    fn past_expiry_yields_negative_days() {
-        let now = chrono::Utc.with_ymd_and_hms(2026, 1, 11, 0, 0, 0).unwrap();
-        let result = days_remaining("Jan  1 00:00:00 2026 GMT", now);
-        assert_eq!(result, Some(-10));
-    }
-
-    #[test]
-    fn malformed_input_yields_none() {
-        assert_eq!(days_remaining("not a date", chrono::Utc::now()), None);
-    }
-}
-
 async fn query_unit_status(unit: &str) -> ServiceStatus {
     match tokio::process::Command::new("systemctl")
         .args(["is-active", unit])
@@ -154,4 +129,29 @@ pub async fn system_status(
         services,
         tls,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn parses_openssl_enddate_format_and_computes_days_remaining() {
+        let now = chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let result = days_remaining("Jan 11 00:00:00 2026 GMT", now);
+        assert_eq!(result, Some(10));
+    }
+
+    #[test]
+    fn past_expiry_yields_negative_days() {
+        let now = chrono::Utc.with_ymd_and_hms(2026, 1, 11, 0, 0, 0).unwrap();
+        let result = days_remaining("Jan  1 00:00:00 2026 GMT", now);
+        assert_eq!(result, Some(-10));
+    }
+
+    #[test]
+    fn malformed_input_yields_none() {
+        assert_eq!(days_remaining("not a date", chrono::Utc::now()), None);
+    }
 }

@@ -12,6 +12,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 use axum::{
     extract::{Path, State},
+    http::HeaderMap,
     Json,
 };
 use havenmail_core::rbac::Action;
@@ -118,6 +119,7 @@ pub async fn create_forward(
     State(state): State<AppState>,
     AuthUser(actor): AuthUser,
     Path(user_id): Path<Uuid>,
+    headers: HeaderMap,
     Json(req): Json<CreateForwardRequest>,
 ) -> ApiResult<Json<Forward>> {
     let owner = fetch_user_email(&state.db, user_id).await?;
@@ -156,6 +158,18 @@ pub async fn create_forward(
     .fetch_one(&state.db)
     .await?;
 
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "forward.create",
+        &forward.id.to_string(),
+        Some(owner.domain_id),
+        None,
+        serde_json::to_value(&forward).ok(),
+    )
+    .await;
+
     Ok(Json(forward))
 }
 
@@ -183,10 +197,11 @@ pub async fn delete_forward(
     State(state): State<AppState>,
     AuthUser(actor): AuthUser,
     Path(forward_id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let row: Option<(Uuid, Uuid)> = sqlx::query_as(
+    let row: Option<(Uuid, Uuid, String)> = sqlx::query_as(
         r#"
-        SELECT f.user_id, u.domain_id FROM forwards f
+        SELECT f.user_id, u.domain_id, f.target_address FROM forwards f
         JOIN users u ON u.id = f.user_id
         WHERE f.id = $1
         "#,
@@ -195,7 +210,7 @@ pub async fn delete_forward(
     .fetch_optional(&state.db)
     .await?;
 
-    let Some((owner_user_id, domain_id)) = row else {
+    let Some((owner_user_id, domain_id, target_address)) = row else {
         return Err(ApiError::NotFound);
     };
     let allowed =
@@ -208,5 +223,18 @@ pub async fn delete_forward(
         .bind(forward_id)
         .execute(&state.db)
         .await?;
+
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "forward.delete",
+        &forward_id.to_string(),
+        Some(domain_id),
+        Some(serde_json::json!({ "user_id": owner_user_id, "target_address": target_address })),
+        None,
+    )
+    .await;
+
     Ok(Json(serde_json::json!({ "status": "deleted" })))
 }

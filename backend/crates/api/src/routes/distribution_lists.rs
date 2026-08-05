@@ -3,6 +3,7 @@ use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 use axum::{
     extract::{Path, State},
+    http::HeaderMap,
     Json,
 };
 use havenmail_core::rbac::Action;
@@ -28,6 +29,7 @@ pub async fn create_distribution_list(
     State(state): State<AppState>,
     AuthUser(actor): AuthUser,
     Path(domain_id): Path<Uuid>,
+    headers: HeaderMap,
     Json(req): Json<CreateDistributionListRequest>,
 ) -> ApiResult<Json<DistributionList>> {
     if !actor.can(Action::ManageDomain, Some(domain_id)) {
@@ -56,6 +58,18 @@ pub async fn create_distribution_list(
         _ => ApiError::Internal(e),
     })?;
 
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "distribution_list.create",
+        &list.id.to_string(),
+        Some(domain_id),
+        None,
+        serde_json::to_value(&list).ok(),
+    )
+    .await;
+
     Ok(Json(list))
 }
 
@@ -80,21 +94,36 @@ pub async fn delete_distribution_list(
     State(state): State<AppState>,
     AuthUser(actor): AuthUser,
     Path(list_id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> ApiResult<Json<serde_json::Value>> {
-    let domain_id: Option<Uuid> =
-        sqlx::query_scalar("SELECT domain_id FROM distribution_lists WHERE id = $1")
-            .bind(list_id)
-            .fetch_optional(&state.db)
-            .await?;
-    let Some(domain_id) = domain_id else {
+    let existing: Option<DistributionList> = sqlx::query_as(
+        "SELECT id, domain_id, address, members FROM distribution_lists WHERE id = $1",
+    )
+    .bind(list_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let Some(existing) = existing else {
         return Err(ApiError::NotFound);
     };
-    if !actor.can(Action::ManageDomain, Some(domain_id)) {
+    if !actor.can(Action::ManageDomain, Some(existing.domain_id)) {
         return Err(ApiError::NotFound);
     }
     sqlx::query("DELETE FROM distribution_lists WHERE id = $1")
         .bind(list_id)
         .execute(&state.db)
         .await?;
+
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "distribution_list.delete",
+        &list_id.to_string(),
+        Some(existing.domain_id),
+        serde_json::to_value(&existing).ok(),
+        None,
+    )
+    .await;
+
     Ok(Json(serde_json::json!({ "status": "deleted" })))
 }
