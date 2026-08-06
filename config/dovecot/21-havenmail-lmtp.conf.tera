@@ -1,0 +1,19 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+# Dateiname MUSS alphabetisch NACH Debians Paket-Default 20-lmtp.conf
+# sortieren (21 statt z. B. 20-havenmail-lmtp), sonst überschreibt die
+# später geladene Paketdatei diese Einstellungen wieder mit ihren
+# Default-Werten — real beim Testen genau so aufgetreten.
+
+protocol lmtp {
+  # Quota schon bei RCPT TO prüfen (sauberer 552-SMTP-Reject statt
+  # Annehmen und erst beim Sichern der Nachricht scheitern).
+  lmtp_rcpt_check_quota = yes
+
+  # Debians Default entfernt die Domain vor der userdb-Suche (gedacht für
+  # System-/PAM-Konten ohne Domain) — bei uns ist die vollständige
+  # E-Mail-Adresse der Username (siehe dovecot_auth_users/10-auth-sql.conf).
+  # Mit dem Default scheitert userdb lookup für JEDE LMTP-Zustellung
+  # ("User doesn't exist"), obwohl RCPT TO (läuft über passdb, nicht
+  # userdb) den Empfänger noch korrekt fand — real beim Testen aufgetreten.
+  auth_username_format = %{user}
+}

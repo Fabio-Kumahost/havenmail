@@ -13,6 +13,11 @@ password_query = \
   FROM dovecot_auth_users \
   WHERE username = '%u' AND active = true
 
+# quota_rule ist der korrekte userdb-Extra-Feldname für Dovecot < 2.4
+# (diese Datei wird auf 2.4-Hosts nicht tatsächlich eingebunden, siehe
+# scripts/lib/install_steps.sh — dort generiert 10-auth-sql.conf für 2.4
+# stattdessen quota_storage_size, der dort erforderliche, andere
+# Feldname, live per Testinstanz verifiziert).
 user_query = \
   SELECT '/var/mail/havenmail/%d/%n' AS home, \
          'maildir:/var/mail/havenmail/%d/%n' AS mail, \

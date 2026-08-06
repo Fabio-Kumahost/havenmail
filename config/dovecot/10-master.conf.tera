@@ -26,3 +26,17 @@ service auth {
     group = postfix
   }
 }
+
+# Zustellungs-Socket für Postfix (virtual_transport = lmtp:unix:private/
+# dovecot-lmtp in main.cf.tera) — nur darüber greift Dovecots Quota-
+# Plugin tatsächlich, siehe 90-quota.conf.tera/21-havenmail-lmtp.conf.tera.
+# Vorher lieferte Postfix per eigenem virtual(8)-Agent direkt ins
+# Maildir, ohne Dovecot je einzubeziehen — quota_bytes stand zwar in der
+# DB, wirkte aber nirgends.
+service lmtp {
+  unix_listener /var/spool/postfix/private/dovecot-lmtp {
+    mode = 0600
+    user = postfix
+    group = postfix
+  }
+}

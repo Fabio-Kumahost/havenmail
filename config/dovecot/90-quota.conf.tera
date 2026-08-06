@@ -1,0 +1,31 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+# Ersetzt Debians unveränderte, komplett auskommentierte Beispieldatei
+# gleichen Namens.
+#
+# Aktiviert das Quota-Plugin mit dem "count"-Treiber (Dovecots eigene
+# Index-basierte Nachverfolgung, kein separates dict/DB nötig). Die
+# tatsächliche Grenze je Postfach kommt NICHT von hier, sondern per
+# userdb-Override aus der quota_storage_size-Spalte, die 10-auth-sql.conf
+# aus users.quota_bytes liefert (leer/NULL = kein Override = unlimitiert,
+# siehe Fallback quota_storage_size unten).
+#
+# WICHTIG (Dovecot 2.4 empirisch ermittelt, live getestet): der
+# userdb-Extra-Feldname MUSS exakt "quota_storage_size" heißen (der
+# naheliegende ältere Name "quota_rule" aus vor-2.4-Beispielen wird still
+# ignoriert — keine Fehlermeldung, die Grenze greift einfach nie). Ein
+# unbenannter "quota { }"-Block wird von Dovecot 2.4 als Syntaxfehler
+# ("missing section name") abgelehnt; es muss der benannte Block
+# `quota "User quota" { driver = count }` sein, sonst entsteht gar keine
+# abfragbare Quota-Root (doveadm quota get liefert dann leere Ausgabe statt
+# Werten, ohne jede Fehlermeldung).
+mail_plugins {
+  quota = yes
+}
+
+quota "User quota" {
+  driver = count
+}
+
+# Fallback für Postfächer ohne DB-Override — unlimitiert (Bestandsverhalten
+# unverändert für alle, bei denen kein explizites quota_bytes gesetzt ist).
+quota_storage_size = unlimited

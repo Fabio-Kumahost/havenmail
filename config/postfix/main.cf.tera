@@ -16,6 +16,17 @@ virtual_minimum_uid = 5000
 virtual_uid_maps = static:5000
 virtual_gid_maps = static:5000
 
+# Zustellung läuft über Dovecots LMTP statt Postfix' eigenem virtual(8)-
+# Agenten (dessen master.cf-"lmtp"-Client-Transport ist Debian-Standard,
+# unverändert vorhanden) — nur so greift Dovecots Quota-Plugin
+# (siehe config/dovecot/90-quota.conf.tera) tatsächlich, sonst landet
+# Mail direkt im Maildir, ohne dass quota_bytes je geprüft wird.
+# virtual_mailbox_limit/-uid_maps/-gid_maps oben bleiben harmlos stehen
+# (virtual(8)-spezifisch, jetzt ungenutzt), keine Notwendigkeit sie zu
+# entfernen. Live isoliert getestet: RCPT TO wird bei Überschreitung
+# korrekt mit "552 5.2.2 Quota exceeded" abgelehnt.
+virtual_transport = lmtp:unix:private/dovecot-lmtp
+
 # reject_sender_login_mismatch auf submission/smtps (siehe
 # master.cf.append) braucht diese Map, sonst gilt JEDE Absenderadresse
 # als "nicht owned" und Versand wird für alle Benutzer abgelehnt.

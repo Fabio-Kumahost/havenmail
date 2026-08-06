@@ -289,6 +289,10 @@ havenmail_render_configs() {
     # durch ein verschachteltes, benanntes Settings-Schema ab (per
     # doveconf -d ermittelt: passdb_sql_query, sql_driver, pgsql_* —
     # nicht dokumentiert unter dem alten dovecot-sql.conf.ext-Format).
+    # quota_storage_size (nicht quota_rule, das vor 2.4 dokumentierte
+    # Feld) als userdb-Extra-Feldname: mit quota_rule bleibt die Grenze
+    # wirkungslos, ohne jede Fehlermeldung, live per Testinstanz
+    # verifiziert (siehe config/dovecot/90-quota.conf.tera).
     cat > "$auth_sql_conf" <<EOF
 sql_driver = pgsql
 pgsql pgsql {
@@ -307,7 +311,7 @@ passdb sql {
 }
 
 userdb sql {
-  userdb_sql_query = SELECT '/var/mail/havenmail/%{user|domain}/%{user|username}' AS home, 'maildir:/var/mail/havenmail/%{user|domain}/%{user|username}' AS mail, 5000 AS uid, 5000 AS gid, quota_bytes AS quota_rule FROM dovecot_auth_users WHERE username = '%{user}' AND active
+  userdb_sql_query = SELECT '/var/mail/havenmail/%{user|domain}/%{user|username}' AS home, 'maildir:/var/mail/havenmail/%{user|domain}/%{user|username}' AS mail, 5000 AS uid, 5000 AS gid, quota_bytes AS quota_storage_size FROM dovecot_auth_users WHERE username = '%{user}' AND active
   userdb_sql_iterate_query = SELECT username AS user FROM dovecot_auth_users WHERE active
 }
 EOF
@@ -350,6 +354,11 @@ havenmail_deploy_mail_configs() {
   install -m 0644 "${render_dir}/dovecot/10-ssl.conf" /etc/dovecot/conf.d/10-ssl.conf
   install -m 0640 -o root -g dovecot "${render_dir}/dovecot/dovecot-sql.conf.ext" /etc/dovecot/dovecot-sql.conf.ext
   install -m 0640 -o root -g dovecot "${render_dir}/dovecot/10-auth-sql.conf" /etc/dovecot/conf.d/10-auth-sql.conf
+  # Quota-Plugin (nur zusammen mit virtual_transport=lmtp:... unten
+  # wirksam) + LMTP-Feintuning (Quota-Check bei RCPT TO, korrektes
+  # userdb-Username-Format für unser E-Mail-als-Username-Schema).
+  install -m 0644 "${render_dir}/dovecot/90-quota.conf" /etc/dovecot/conf.d/90-quota.conf
+  install -m 0644 "${render_dir}/dovecot/21-havenmail-lmtp.conf" /etc/dovecot/conf.d/21-havenmail-lmtp.conf
   # Debians dovecot-core-Paket aktiviert per Default PAM-Auth
   # (auth-system.conf.ext) — virtuelle Havenmail-Postfächer sind keine
   # Systembenutzer, PAM muss also weichen, sonst schlägt jeder Login fehl.
