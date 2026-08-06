@@ -14,7 +14,7 @@ tokio = { workspace = true }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 argon2 = "0.5"
-password-hash = { version = "0.5", features = ["rand_core"] }
+password-hash = { version = "0.6", features = ["rand_core"] }
 rand_core = { version = "0.6", features = ["std"] }
 jsonwebtoken = "9"
 totp-rs = { version = "5", features = ["gen_secret", "otpauth"] }
