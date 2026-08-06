@@ -18,7 +18,7 @@ password-hash = { version = "0.5", features = ["rand_core"] }
 rand_core = { version = "0.6", features = ["std"] }
 jsonwebtoken = "9"
 totp-rs = { version = "5", features = ["gen_secret", "otpauth"] }
-sha2 = "0.10"
+sha2 = "0.11"
 thiserror = "1"
 tera = "1"
 rsa = { version = "0.9", features = ["pem", "sha2"] }
