@@ -120,6 +120,8 @@ export interface Domain {
   catch_all_enabled: boolean
   catch_all_target: string | null
   quota_bytes: number | null
+  ratelimit_per_hour_override: number | null
+  ratelimit_burst_override: number | null
   created_at: string
 }
 
@@ -358,6 +360,20 @@ export const api = {
       request<Domain>('PATCH', `/api/v1/domains/${id}`, patch),
     delete: (id: string) => request<void>('DELETE', `/api/v1/domains/${id}`),
     overview: () => request<DomainOverviewEntry[]>('GET', '/api/v1/domains/overview'),
+    // Eigener Endpunkt statt `update()` — anders als die übrigen Domain-
+    // Felder muss ein Rate-Limit-Override auch wieder auf "kein Override"
+    // zurückgesetzt werden können (leeres Formularfeld = null), was das
+    // allgemeine PATCH mit seiner "fehlt = unverändert"-Semantik nicht kann.
+    // Beide Felder daher immer explizit mitschicken (Zahl oder null).
+    updateRatelimitOverride: (
+      id: string,
+      perHour: number | null,
+      burst: number | null,
+    ) =>
+      request<Domain>('PATCH', `/api/v1/domains/${id}/ratelimit-override`, {
+        ratelimit_per_hour_override: perHour,
+        ratelimit_burst_override: burst,
+      }),
   },
   users: {
     list: (domainId: string) => request<User[]>('GET', `/api/v1/domains/${domainId}/users`),

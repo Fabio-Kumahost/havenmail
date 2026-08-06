@@ -73,6 +73,21 @@ pub struct SecurityRenderContext {
     pub antivirus_enabled: bool,
     pub antivirus_action: String,
     pub antivirus_max_size_mb: i32,
+    /// Domains mit eigenem Rate-Limit-Override (siehe routes/domains.rs).
+    /// Leer im (aktuell üblichen) Normalfall ohne jeden Override.
+    pub domain_overrides: Vec<DomainRatelimitOverride>,
+}
+
+/// Ein Eintrag in `SecurityRenderContext::domain_overrides` — schon auf
+/// effektive Werte aufgelöst (fehlt nur eines der beiden DB-Felder, füllt
+/// der Aufrufer es mit dem globalen Default auf, siehe
+/// routes/security_settings.rs::apply_to_rspamd), damit dieses Template
+/// keine Fallback-Logik selbst nachbilden muss.
+#[derive(Debug, Clone, Serialize)]
+pub struct DomainRatelimitOverride {
+    pub name: String,
+    pub per_hour: i32,
+    pub burst: i32,
 }
 
 /// Rendert genau die vier Rspamd-Templates, die von `security_settings`
@@ -238,6 +253,7 @@ mod tests {
             antivirus_enabled: true,
             antivirus_action: "reject".to_string(),
             antivirus_max_size_mb: 25,
+            domain_overrides: vec![],
         }
     }
 
@@ -276,5 +292,64 @@ mod tests {
             .unwrap()
             .1;
         assert!(!antivirus.contains("action ="));
+    }
+
+    fn ratelimit_conf(ctx: &SecurityRenderContext) -> String {
+        render_security_settings(&repo_config_dir(), ctx)
+            .unwrap()
+            .into_iter()
+            .find(|(name, _)| *name == "rspamd/local.d/ratelimit.conf.tera")
+            .unwrap()
+            .1
+    }
+
+    #[test]
+    fn ratelimit_uses_simple_keys_form_without_any_domain_override() {
+        let out = ratelimit_conf(&sample_security_context());
+        assert!(out.contains(r#"keys = ["user"];"#));
+        assert!(!out.contains("selector ="));
+    }
+
+    #[test]
+    fn ratelimit_renders_selector_based_buckets_with_domain_overrides() {
+        let mut ctx = sample_security_context();
+        ctx.domain_overrides = vec![DomainRatelimitOverride {
+            name: "example.org".to_string(),
+            per_hour: 20,
+            burst: 5,
+        }];
+        let out = ratelimit_conf(&ctx);
+        // Globale Regel schließt die Override-Domain aus, damit deren
+        // eigener (ggf. höherer) Wert nicht vom globalen wieder gedeckelt wird.
+        // Kommagetrennte Einzelargumente, bewusst OHNE `[...]`-Listensyntax
+        // (siehe Kommentar im Template) — mit Klammern verpufft der Filter
+        // wirkungslos, live gegen den echten Server verifiziert.
+        assert!(out.contains("not_in('example.org')"));
+        // Eigener Bucket mit den Override-Werten für die Domain.
+        assert!(out.contains("in('example.org')"));
+        assert!(out.contains("rate = \"20 / 1h\";"));
+        assert!(out.contains("burst = 5;"));
+        assert!(!out.contains(r#"keys = ["user"];"#));
+    }
+
+    #[test]
+    fn ratelimit_not_in_lists_multiple_override_domains_comma_separated() {
+        let mut ctx = sample_security_context();
+        ctx.domain_overrides = vec![
+            DomainRatelimitOverride {
+                name: "a.example".to_string(),
+                per_hour: 10,
+                burst: 10,
+            },
+            DomainRatelimitOverride {
+                name: "b.example".to_string(),
+                per_hour: 30,
+                burst: 30,
+            },
+        ];
+        let out = ratelimit_conf(&ctx);
+        assert!(out.contains("not_in('a.example', 'b.example')"));
+        assert!(out.contains("domain_override_1"));
+        assert!(out.contains("domain_override_2"));
     }
 }

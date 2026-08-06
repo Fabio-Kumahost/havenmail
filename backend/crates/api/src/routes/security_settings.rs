@@ -11,7 +11,9 @@ use crate::auth_extractor::AuthUser;
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 use axum::{extract::State, http::HeaderMap, Json};
-use havenmail_core::config_render::{render_security_settings, SecurityRenderContext};
+use havenmail_core::config_render::{
+    render_security_settings, DomainRatelimitOverride, SecurityRenderContext,
+};
 use havenmail_core::rbac::Action;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -160,7 +162,7 @@ pub async fn update_spam_settings(
     .fetch_one(&state.db)
     .await?;
 
-    apply_to_rspamd(&state, &updated).await?;
+    apply_to_rspamd(&state).await?;
 
     crate::audit_log::log(
         &state,
@@ -228,7 +230,7 @@ pub async fn update_virus_settings(
     .fetch_one(&state.db)
     .await?;
 
-    apply_to_rspamd(&state, &updated).await?;
+    apply_to_rspamd(&state).await?;
 
     crate::audit_log::log(
         &state,
@@ -299,15 +301,65 @@ pub async fn update_password_policy(
     Ok(Json(updated))
 }
 
-/// Rendert die vier Rspamd-Templates neu, schreibt sie nach
-/// `/etc/rspamd/local.d/`, prüft mit `rspamadm configtest` und stößt bei
-/// Erfolg einen Reload an. Bei einem Configtest-Fehler werden die zuvor
-/// gesicherten Dateiinhalte wiederhergestellt und der Aufruf schlägt mit
-/// `400` fehl — die DB-Zeile ist zu diesem Zeitpunkt zwar schon
-/// aktualisiert, das ist bewusst: der nächste erfolgreiche Save rendert
-/// ohnehin neu, und ein inkonsistenter Zwischenzustand zwischen DB und
-/// Live-Config ist unkritisch, da die DB stets die Quelle der Wahrheit ist.
-async fn apply_to_rspamd(state: &AppState, settings: &SecuritySettings) -> ApiResult<()> {
+#[derive(Debug, FromRow)]
+struct DomainRatelimitOverrideRow {
+    name: String,
+    per_hour: Option<i32>,
+    burst: Option<i32>,
+}
+
+/// Domains mit einem gesetzten Rate-Limit-Override (siehe routes/domains.rs)
+/// — bereits auf effektive Werte aufgelöst: fehlt eines der beiden
+/// DB-Felder (z. B. nur `per_hour` gesetzt), wird für das andere der
+/// gerade aktuelle globale Wert eingesetzt, damit das Template selbst
+/// keine Fallback-Logik nachbilden muss.
+async fn fetch_domain_ratelimit_overrides(
+    pool: &sqlx::PgPool,
+    settings: &SecuritySettings,
+) -> ApiResult<Vec<DomainRatelimitOverride>> {
+    let rows: Vec<DomainRatelimitOverrideRow> = sqlx::query_as(
+        r#"
+        SELECT name,
+               ratelimit_per_hour_override as per_hour,
+               ratelimit_burst_override as burst
+        FROM domains
+        WHERE ratelimit_per_hour_override IS NOT NULL OR ratelimit_burst_override IS NOT NULL
+        ORDER BY name
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| DomainRatelimitOverride {
+            name: r.name,
+            per_hour: r.per_hour.unwrap_or(settings.ratelimit_per_hour),
+            burst: r.burst.unwrap_or(settings.ratelimit_burst),
+        })
+        .collect())
+}
+
+/// Liest den aktuellen Stand aus `security_settings` UND `domains`
+/// (Rate-Limit-Overrides) frisch aus der DB, rendert die vier betroffenen
+/// Rspamd-Templates neu, schreibt sie nach `/etc/rspamd/local.d/`, prüft
+/// mit `rspamadm configtest` und stößt bei Erfolg einen Reload an. Bei
+/// einem Configtest-Fehler werden die zuvor gesicherten Dateiinhalte
+/// wiederhergestellt und der Aufruf schlägt mit `400` fehl — die
+/// DB-Änderung des jeweiligen Aufrufers ist zu diesem Zeitpunkt zwar schon
+/// aktiv, das ist bewusst: der nächste erfolgreiche Save rendert ohnehin
+/// neu, und ein inkonsistenter Zwischenzustand zwischen DB und Live-Config
+/// ist unkritisch, da die DB stets die Quelle der Wahrheit ist.
+///
+/// Nimmt bewusst keine Einstellungen als Parameter entgegen (liest immer
+/// frisch), damit sowohl `update_spam_settings`/`update_virus_settings`
+/// hier als auch `routes/domains.rs`s Rate-Limit-Override-Endpunkt
+/// denselben, immer konsistenten Gesamtzustand rendern — die
+/// domainbezogenen Buckets im ratelimit.conf-Template hängen von BEIDEN
+/// Quellen zugleich ab (globaler Default UND Domain-Overrides).
+pub(crate) async fn apply_to_rspamd(state: &AppState) -> ApiResult<()> {
+    let settings = fetch_settings(&state.db).await?;
+    let domain_overrides = fetch_domain_ratelimit_overrides(&state.db, &settings).await?;
     let ctx = SecurityRenderContext {
         spam_greylist_score: settings.spam_greylist_score,
         spam_add_header_score: settings.spam_add_header_score,
@@ -319,6 +371,7 @@ async fn apply_to_rspamd(state: &AppState, settings: &SecuritySettings) -> ApiRe
         antivirus_enabled: settings.antivirus_enabled,
         antivirus_action: settings.antivirus_action.clone(),
         antivirus_max_size_mb: settings.antivirus_max_size_mb,
+        domain_overrides,
     };
     let rendered = render_security_settings(&state.config_dir, &ctx)
         .map_err(|e| ApiError::BadRequest(format!("Template-Fehler: {e}")))?;

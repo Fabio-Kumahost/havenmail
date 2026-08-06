@@ -20,6 +20,13 @@ havenmail_apt_packages() {
     dovecot-sieve
     dovecot-managesieved
     rspamd
+    # Redis-kompatibler Zähler-Speicher für Rspamds Ratelimit-Modul (siehe
+    # config/rspamd/local.d/redis.conf.tera) — ohne laufenden Server bleibt
+    # das gesamte Rate-Limiting (global wie Domain-Override) wirkungslos,
+    # da das Modul seine Buckets dort hält. `valkey-server` statt
+    # `redis-server`, da Debian 13 `rspamd`s Recommends ohnehin dorthin
+    # auflöst und beide redis-protokollkompatibel sind.
+    valkey-server
     clamav
     clamav-daemon
     nginx
@@ -377,6 +384,11 @@ havenmail_deploy_mail_configs() {
   install -m 0644 "${render_dir}/rspamd/local.d/dkim_signing.conf" /etc/rspamd/local.d/dkim_signing.conf
   install -m 0664 -o root -g havenmail "${render_dir}/rspamd/local.d/dmarc.conf" /etc/rspamd/local.d/dmarc.conf
   install -m 0664 -o root -g havenmail "${render_dir}/rspamd/local.d/ratelimit.conf" /etc/rspamd/local.d/ratelimit.conf
+  # Statischer Redis-Server-Eintrag (immer lokal, kein Panel-Feld) fürs
+  # Ratelimit-Modul — nicht Teil von ReadWritePaths-Gruppenrechten wie die
+  # Zeilen oben, da diese Datei nie zur Laufzeit vom API-Prozess neu
+  # geschrieben wird.
+  install -m 0644 "${render_dir}/rspamd/local.d/redis.conf" /etc/rspamd/local.d/redis.conf
 
   # jail.d, NICHT filter.d — das sind Jail-Definitionen (referenzieren
   # fail2bans mitgelieferte Filter), keine eigenen Filter-Regeln. Vorher
@@ -579,7 +591,12 @@ havenmail_start_services() {
 
   havenmail_log "Starte Havenmail-Dienste…"
   systemctl restart havenmail-api.service
-  systemctl enable --quiet fail2ban postfix dovecot rspamd clamav-daemon nginx 2>/dev/null || true
+  # valkey-server VOR rspamd starten (bzw. neu starten, falls es diesen
+  # Lauf schon lief) — Rspamds Ratelimit-Modul verbindet sich beim eigenen
+  # Start mit Redis; ein noch nicht laufender Server macht das gesamte
+  # Rate-Limiting bis zum nächsten Rspamd-Neustart wirkungslos.
+  systemctl enable --quiet fail2ban postfix dovecot rspamd valkey-server clamav-daemon nginx 2>/dev/null || true
+  systemctl restart valkey-server
   systemctl restart postfix dovecot rspamd clamav-daemon nginx fail2ban
 
   sleep 2

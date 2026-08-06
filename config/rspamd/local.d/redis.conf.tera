@@ -1,0 +1,11 @@
+# Von der Havenmail Control-Plane gerendert — nicht manuell bearbeiten.
+# Backend für Rspamds Ratelimit-Modul (siehe ratelimit.conf.tera) — ohne
+# diese Datei bleibt jedes Rate-Limiting (global wie Domain-Override)
+# wirkungslos, da das Modul seine Zähler-Buckets in Redis hält und ohne
+# konfigurierten Server erst gar nicht aktiv wird.
+#
+# Immer lokal (kein Panel-Feld, kein Installer-Parameter): Havenmail
+# betreibt `valkey-server` (Redis-protokollkompatibel, siehe
+# scripts/lib/install_steps.sh) auf demselben Host wie Rspamd, rein als
+# dessen ephemeren Zähler-Speicher — kein allgemeiner externer Cache.
+servers = "127.0.0.1";

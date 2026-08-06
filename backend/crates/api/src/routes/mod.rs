@@ -45,6 +45,10 @@ pub fn router() -> Router<AppState> {
                 .delete(domains::delete_domain),
         )
         .route(
+            "/api/v1/domains/:domain_id/ratelimit-override",
+            patch(domains::update_ratelimit_override),
+        )
+        .route(
             "/api/v1/domains/:domain_id/users",
             post(users::create_user).get(users::list_users),
         )

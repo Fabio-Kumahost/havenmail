@@ -1495,3 +1495,94 @@ async fn password_policy_is_readable_by_any_role_and_enforced_dynamically() {
     .await;
     assert_eq!(status, StatusCode::OK);
 }
+
+/// Testet nur die Vorprüfungen (RBAC, Validierung), die VOR
+/// `security_settings::apply_to_rspamd` laufen — der Erfolgspfad selbst
+/// schreibt echte Dateien nach `/etc/rspamd/local.d/` und ruft `rspamadm
+/// configtest` auf, was in der CI-Umgebung (kein Rspamd installiert,
+/// siehe .github/workflows/backend.yml) fehlschlagen würde. Der
+/// Erfolgspfad wurde stattdessen live gegen den echten Produktionsserver
+/// verifiziert (siehe Commit-Beschreibung).
+#[tokio::test]
+async fn ratelimit_override_is_scoped_and_validated() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (super_email, super_password) = bootstrap_super_admin(&db).await;
+    let super_token = login(&app, &super_email, &super_password).await;
+
+    let domain_a_name = format!("ratelimit-a-{}.test", Uuid::new_v4());
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": domain_a_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let domain_a_id = body["id"].as_str().unwrap().to_string();
+
+    let domain_b_name = format!("ratelimit-b-{}.test", Uuid::new_v4());
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": domain_b_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let domain_b_id = body["id"].as_str().unwrap().to_string();
+
+    let admin_password = "ratelimit-domain-admin-pw!!";
+    let (status, _) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_b_id}/users"),
+        Some(&super_token),
+        Some(json!({ "local_part": "admin", "password": admin_password, "role": "domain_admin" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let admin_b_token = login(&app, &format!("admin@{domain_b_name}"), admin_password).await;
+
+    // domain_admin von Domain B darf Domain A's Override nicht anfassen
+    // (gleiche NotFound-statt-Forbidden-Konvention wie update_domain, um
+    // die Existenz fremder Domains nicht preiszugeben).
+    let (status, _) = call(
+        &app,
+        "PATCH",
+        &format!("/api/v1/domains/{domain_a_id}/ratelimit-override"),
+        Some(&admin_b_token),
+        Some(json!({ "ratelimit_per_hour_override": 50, "ratelimit_burst_override": 50 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Werte unter 1 werden abgelehnt — Prüfung läuft vor jedem
+    // Rspamd-Zugriff, daher CI-sicher.
+    let (status, body) = call(
+        &app,
+        "PATCH",
+        &format!("/api/v1/domains/{domain_a_id}/ratelimit-override"),
+        Some(&super_token),
+        Some(json!({ "ratelimit_per_hour_override": 0, "ratelimit_burst_override": null })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body:?}");
+
+    // Neu angelegte Domain hat standardmäßig keinen Override gesetzt.
+    let (status, body) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/domains/{domain_a_id}"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    assert_eq!(body["ratelimit_per_hour_override"], Value::Null);
+    assert_eq!(body["ratelimit_burst_override"], Value::Null);
+}

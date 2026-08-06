@@ -30,6 +30,88 @@ function usePasswordMinLength(): number {
   return minLength
 }
 
+/**
+ * Domain-eigenes Rate-Limit-Override (siehe routes/domains.rs) — leere
+ * Felder bedeuten "kein Override, nutzt den globalen Wert" (null im
+ * Backend), keine "0" oder ähnlicher Sentinel-Wert. Zeigt zusätzlich den
+ * Hinweis, dass der globale Default auf der Spam-Schutz-Seite gilt, falls
+ * kein Override gesetzt ist.
+ */
+function RatelimitOverrideSection({
+  domain,
+  onReload,
+  onError,
+}: {
+  domain: Domain
+  onReload: () => void
+  onError: (msg: string) => void
+}) {
+  const [perHour, setPerHour] = useState(domain.ratelimit_per_hour_override?.toString() ?? '')
+  const [burst, setBurst] = useState(domain.ratelimit_burst_override?.toString() ?? '')
+  const [submitting, setSubmitting] = useState(false)
+  const [success, setSuccess] = useState(false)
+
+  useEffect(() => {
+    setPerHour(domain.ratelimit_per_hour_override?.toString() ?? '')
+    setBurst(domain.ratelimit_burst_override?.toString() ?? '')
+  }, [domain.ratelimit_per_hour_override, domain.ratelimit_burst_override])
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    setSuccess(false)
+    setSubmitting(true)
+    try {
+      await api.domains.updateRatelimitOverride(
+        domain.id,
+        perHour.trim() === '' ? null : Number(perHour),
+        burst.trim() === '' ? null : Number(burst),
+      )
+      setSuccess(true)
+      onReload()
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : 'Speichern fehlgeschlagen')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <section className="card">
+      <h2>Rate-Limiting</h2>
+      <p className="muted">
+        Überschreibt für diese Domain das globale Rate-Limit (siehe Spam-Schutz-Seite) — leer
+        lassen, um wieder den globalen Wert zu nutzen.
+      </p>
+      <form className="inline-form" onSubmit={onSubmit}>
+        <label>
+          Mails pro Stunde
+          <input
+            type="number"
+            min={1}
+            placeholder="global"
+            value={perHour}
+            onChange={(e) => setPerHour(e.target.value)}
+          />
+        </label>
+        <label>
+          Burst
+          <input
+            type="number"
+            min={1}
+            placeholder="global"
+            value={burst}
+            onChange={(e) => setBurst(e.target.value)}
+          />
+        </label>
+        {success && <p className="badge badge-ready">Gespeichert und angewendet</p>}
+        <button type="submit" disabled={submitting}>
+          {submitting ? 'Speichere…' : 'Speichern'}
+        </button>
+      </form>
+    </section>
+  )
+}
+
 function formatBytes(bytes: number | null | undefined): string {
   if (bytes == null) return '—'
   if (bytes < 1024) return `${bytes} B`
@@ -156,6 +238,10 @@ export default function DomainDetail() {
           </tbody>
         </table>
       </section>
+
+      {domain && (
+        <RatelimitOverrideSection domain={domain} onReload={reload} onError={setError} />
+      )}
 
       <DnsSection domainId={domainId} onError={setError} />
     </div>

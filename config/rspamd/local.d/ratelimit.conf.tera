@@ -6,8 +6,47 @@
 # Admin-Panel editierbar (Spam-Schutz-Seite, siehe
 # routes/security_settings.rs) — Quelle der Wahrheit ist die
 # `security_settings`-Tabelle, nicht diese Datei.
+#
+# `domain_overrides` (aus domains.ratelimit_per_hour_override/_burst_override,
+# siehe routes/domains.rs) erlaubt es, das globale Limit je Domain zu
+# überschreiben — sowohl strenger als auch lockerer. Ohne jeden Override
+# bleibt die Konfiguration bewusst im einfachen `keys = ["user"]`-Format
+# von vorher (kein unnötiges Selector-Scripting im Normalfall, kleinstes
+# Risiko für den vorhandenen, bereits produktiv laufenden Aufbau).
 enabled = {{ ratelimit_enabled | default(value=true) }};
 rates {
+{% if domain_overrides and domain_overrides | length > 0 %}
+  # Domain-Teil des SASL-Nutzernamens ("lokal@domain") extrahiert per
+  # Regexp+nth(2) (Capture-Gruppe 2 der Regexp-Trefferliste, siehe
+  # rspamd lua_selectors); diese Standard-Regel greift nur für Domains
+  # OHNE eigenen Override — sonst würde der globale Wert einen lockereren
+  # Domain-Override wieder auf das globale Maß zurückstutzen.
+  #
+  # WICHTIG: `in`/`not_in` erwarten kommagetrennte Einzelargumente, KEINE
+  # `['a', 'b']`-Listensyntax — mit eckigen Klammern parst rspamds
+  # Selector-Grammatik das Argument als verschachtelte Tabelle statt als
+  # flaches String-Array, wodurch die Schema-Validierung von `in`/`not_in`
+  # intern fehlschlägt und beide Filter wirkungslos verpuffen (live gegen
+  # den echten Server über /plugins/selectors/check_message verifiziert:
+  # `not_in(['x'])` ließ "x" fälschlich durch, `in(['x'])` filterte "x"
+  # fälschlich heraus — exakt invertiertes Verhalten).
+  user_per_hour {
+    selector = "user.regexp('@(.+)$').nth(2).not_in({% for d in domain_overrides %}'{{ d.name }}'{% if not loop.last %}, {% endif %}{% endfor %})";
+    bucket {
+      burst = {{ ratelimit_burst | default(value=100) }};
+      rate = "{{ ratelimit_per_hour | default(value=100) }} / 1h";
+    }
+  }
+{% for d in domain_overrides %}
+  domain_override_{{ loop.index }} {
+    selector = "user.regexp('@(.+)$').nth(2).in('{{ d.name }}')";
+    bucket {
+      burst = {{ d.burst }};
+      rate = "{{ d.per_hour }} / 1h";
+    }
+  }
+{% endfor %}
+{% else %}
   user_per_hour {
     bucket {
       burst = {{ ratelimit_burst | default(value=100) }};
@@ -15,4 +54,5 @@ rates {
     }
     keys = ["user"];
   }
+{% endif %}
 }

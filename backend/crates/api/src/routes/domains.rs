@@ -19,8 +19,21 @@ pub struct Domain {
     pub catch_all_enabled: bool,
     pub catch_all_target: Option<String>,
     pub quota_bytes: Option<i64>,
+    /// `None` = kein Override, Domain nutzt das globale Rate-Limit aus
+    /// `security_settings` (siehe routes/security_settings.rs). Editierbar
+    /// über den eigenen `PATCH .../ratelimit-override`-Endpunkt unten, nicht
+    /// über das allgemeine `update_domain` (siehe dortiger Kommentar zum
+    /// fehlenden Clear-auf-NULL-Mechanismus).
+    pub ratelimit_per_hour_override: Option<i32>,
+    pub ratelimit_burst_override: Option<i32>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
+
+/// Wiederverwendete Spaltenliste für alle SELECT/RETURNING-Stellen dieser
+/// Datei — ein einziger Ort, an dem `Domain`s Felder mit der DB-Query in
+/// Sync gehalten werden.
+const DOMAIN_COLUMNS: &str = "id, name, is_active, catch_all_enabled, catch_all_target, \
+     quota_bytes, ratelimit_per_hour_override, ratelimit_burst_override, created_at";
 
 #[derive(Debug, Deserialize)]
 pub struct CreateDomainRequest {
@@ -43,13 +56,13 @@ pub async fn create_domain(
         return Err(ApiError::BadRequest("ungültiger Domain-Name".to_string()));
     }
 
-    let domain: Domain = sqlx::query_as(
+    let domain: Domain = sqlx::query_as(&format!(
         r#"
         INSERT INTO domains (name, quota_bytes)
         VALUES ($1, $2)
-        RETURNING id, name, is_active, catch_all_enabled, catch_all_target, quota_bytes, created_at
-        "#,
-    )
+        RETURNING {DOMAIN_COLUMNS}
+        "#
+    ))
     .bind(req.name.trim().to_lowercase())
     .bind(req.quota_bytes)
     .fetch_one(&state.db)
@@ -83,9 +96,9 @@ pub async fn list_domains(
 ) -> ApiResult<Json<Vec<Domain>>> {
     let domains: Vec<Domain> = match actor.role {
         Role::SuperAdmin => {
-            sqlx::query_as(
-                "SELECT id, name, is_active, catch_all_enabled, catch_all_target, quota_bytes, created_at FROM domains ORDER BY name",
-            )
+            sqlx::query_as(&format!(
+                "SELECT {DOMAIN_COLUMNS} FROM domains ORDER BY name"
+            ))
             .fetch_all(&state.db)
             .await?
         }
@@ -93,9 +106,9 @@ pub async fn list_domains(
             let Some(domain_id) = actor.domain_id else {
                 return Ok(Json(vec![]));
             };
-            sqlx::query_as(
-                "SELECT id, name, is_active, catch_all_enabled, catch_all_target, quota_bytes, created_at FROM domains WHERE id = $1",
-            )
+            sqlx::query_as(&format!(
+                "SELECT {DOMAIN_COLUMNS} FROM domains WHERE id = $1"
+            ))
             .bind(domain_id)
             .fetch_all(&state.db)
             .await?
@@ -112,9 +125,9 @@ pub async fn get_domain(
     if !actor.can(Action::ManageDomain, Some(domain_id)) {
         return Err(ApiError::NotFound); // kein Hinweis auf Existenz fremder Domains
     }
-    let domain: Domain = sqlx::query_as(
-        "SELECT id, name, is_active, catch_all_enabled, catch_all_target, quota_bytes, created_at FROM domains WHERE id = $1",
-    )
+    let domain: Domain = sqlx::query_as(&format!(
+        "SELECT {DOMAIN_COLUMNS} FROM domains WHERE id = $1"
+    ))
     .bind(domain_id)
     .fetch_optional(&state.db)
     .await?
@@ -146,9 +159,9 @@ pub async fn update_domain(
         ));
     }
 
-    let current: Domain = sqlx::query_as(
-        "SELECT id, name, is_active, catch_all_enabled, catch_all_target, quota_bytes, created_at FROM domains WHERE id = $1",
-    )
+    let current: Domain = sqlx::query_as(&format!(
+        "SELECT {DOMAIN_COLUMNS} FROM domains WHERE id = $1"
+    ))
     .bind(domain_id)
     .fetch_optional(&state.db)
     .await?
@@ -160,14 +173,14 @@ pub async fn update_domain(
     let catch_all_target = req.catch_all_target.or(current.catch_all_target);
     let quota_bytes = req.quota_bytes.or(current.quota_bytes);
 
-    let domain: Domain = sqlx::query_as(
+    let domain: Domain = sqlx::query_as(&format!(
         r#"
         UPDATE domains
         SET is_active = $2, catch_all_enabled = $3, catch_all_target = $4, quota_bytes = $5
         WHERE id = $1
-        RETURNING id, name, is_active, catch_all_enabled, catch_all_target, quota_bytes, created_at
-        "#,
-    )
+        RETURNING {DOMAIN_COLUMNS}
+        "#
+    ))
     .bind(domain_id)
     .bind(is_active)
     .bind(catch_all_enabled)
@@ -181,6 +194,90 @@ pub async fn update_domain(
         &actor,
         &headers,
         "domain.update",
+        &domain_id.to_string(),
+        Some(domain_id),
+        current_snapshot,
+        serde_json::to_value(&domain).ok(),
+    )
+    .await;
+
+    Ok(Json(domain))
+}
+
+/// Beide Felder sind bewusst nicht optional (kein `#[serde(default)]`) und
+/// müssen daher in jeder Anfrage explizit als Zahl oder `null` mitgeschickt
+/// werden — anders als `UpdateDomainRequest::quota_bytes` etc., das über
+/// `.or(current…)` NIE auf NULL zurückgesetzt werden kann (fehlendes Feld
+/// heißt dort "unverändert"), muss dieser Endpunkt einen Override auch
+/// wieder löschen können ("leeres Feld im Frontend" = zurück zum globalen
+/// Default). Ein eigener, kleiner Endpunkt statt eine Ausnahme im
+/// allgemeinen `update_domain` einzubauen hält diese Tri-State-Semantik
+/// (unverändert/gesetzt/gelöscht) an einer einzigen, klar benannten Stelle.
+#[derive(Debug, Deserialize)]
+pub struct UpdateRatelimitOverrideRequest {
+    pub ratelimit_per_hour_override: Option<i32>,
+    pub ratelimit_burst_override: Option<i32>,
+}
+
+pub async fn update_ratelimit_override(
+    State(state): State<AppState>,
+    AuthUser(actor): AuthUser,
+    Path(domain_id): Path<Uuid>,
+    headers: HeaderMap,
+    Json(req): Json<UpdateRatelimitOverrideRequest>,
+) -> ApiResult<Json<Domain>> {
+    if !actor.can(Action::ManageDomain, Some(domain_id)) {
+        return Err(ApiError::NotFound);
+    }
+    if let Some(v) = req.ratelimit_per_hour_override {
+        if v < 1 {
+            return Err(ApiError::BadRequest(
+                "ratelimit_per_hour_override muss mindestens 1 sein".to_string(),
+            ));
+        }
+    }
+    if let Some(v) = req.ratelimit_burst_override {
+        if v < 1 {
+            return Err(ApiError::BadRequest(
+                "ratelimit_burst_override muss mindestens 1 sein".to_string(),
+            ));
+        }
+    }
+
+    let current: Domain = sqlx::query_as(&format!(
+        "SELECT {DOMAIN_COLUMNS} FROM domains WHERE id = $1"
+    ))
+    .bind(domain_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(ApiError::NotFound)?;
+    let current_snapshot = serde_json::to_value(&current).ok();
+
+    let domain: Domain = sqlx::query_as(&format!(
+        r#"
+        UPDATE domains
+        SET ratelimit_per_hour_override = $2, ratelimit_burst_override = $3
+        WHERE id = $1
+        RETURNING {DOMAIN_COLUMNS}
+        "#
+    ))
+    .bind(domain_id)
+    .bind(req.ratelimit_per_hour_override)
+    .bind(req.ratelimit_burst_override)
+    .fetch_one(&state.db)
+    .await?;
+
+    // Betrifft dasselbe gerenderte ratelimit.conf wie die globalen
+    // Spam-Settings (siehe security_settings::apply_to_rspamd — liest
+    // Domain-Overrides IMMER frisch aus der DB, unabhängig davon, von wo
+    // aus die Änderung kam).
+    crate::routes::security_settings::apply_to_rspamd(&state).await?;
+
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "domain.update_ratelimit_override",
         &domain_id.to_string(),
         Some(domain_id),
         current_snapshot,
