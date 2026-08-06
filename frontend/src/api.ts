@@ -257,6 +257,8 @@ export interface SecuritySettings {
   antivirus_action: 'reject' | 'add_header' | 'no_action'
   antivirus_max_size_mb: number
   min_password_length: number
+  webhook_url: string | null
+  webhook_enabled: boolean
   updated_at: string
 }
 
@@ -501,6 +503,15 @@ export const api = {
     // dürfen.
     passwordPolicy: () =>
       request<{ min_password_length: number }>('GET', '/api/v1/system/password-policy'),
+    updateWebhook: (webhookUrl: string | null, webhookEnabled: boolean) =>
+      request<SecuritySettings>('PATCH', '/api/v1/system/webhook-settings', {
+        webhook_url: webhookUrl,
+        webhook_enabled: webhookEnabled,
+      }),
+    testWebhook: (webhookUrl: string) =>
+      request<{ status: string }>('POST', '/api/v1/system/webhook-settings/test', {
+        webhook_url: webhookUrl,
+      }),
   },
   metrics: {
     range: (range: '7d' | '30d' = '7d') =>

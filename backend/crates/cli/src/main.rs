@@ -727,15 +727,28 @@ async fn notify_check(
         .await
         .map_err(|e| e.to_string())?;
 
-    let admin_email = match admin_email {
-        Some(email) if !email.is_empty() => email,
-        _ => {
-            return Ok(json!({
-                "status": "übersprungen",
-                "grund": "HAVENMAIL_ADMIN_EMAIL nicht gesetzt",
-            }))
-        }
+    let admin_email = admin_email.filter(|e| !e.is_empty());
+
+    // Webhook ist ein ZUSÄTZLICHER Kanal neben E-Mail (siehe
+    // routes/security_settings.rs) — `webhook_enabled` UND eine gesetzte
+    // URL müssen beide zutreffen, sonst bleibt dieser Lauf beim reinen
+    // E-Mail-Verhalten von vorher.
+    let webhook_row: (Option<String>, bool) =
+        sqlx::query_as("SELECT webhook_url, webhook_enabled FROM security_settings WHERE id = 1")
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+    let webhook_url = match webhook_row {
+        (Some(url), true) if !url.is_empty() => Some(url),
+        _ => None,
     };
+
+    if admin_email.is_none() && webhook_url.is_none() {
+        return Ok(json!({
+            "status": "übersprungen",
+            "grund": "weder HAVENMAIL_ADMIN_EMAIL noch ein aktivierter Webhook konfiguriert",
+        }));
+    }
 
     let mut results = Vec::new();
 
@@ -763,6 +776,7 @@ async fn notify_check(
                 status,
                 &message,
                 admin_email,
+                webhook_url.as_deref(),
                 remind_after,
             )
             .await?,
@@ -794,6 +808,7 @@ async fn notify_check(
                 status,
                 &message,
                 admin_email,
+                webhook_url.as_deref(),
                 remind_after,
             )
             .await?,
@@ -820,6 +835,7 @@ async fn notify_check(
                 status,
                 &message,
                 admin_email,
+                webhook_url.as_deref(),
                 remind_after,
             )
             .await?,
@@ -858,6 +874,7 @@ async fn notify_check(
                         status,
                         &message,
                         admin_email,
+                        webhook_url.as_deref(),
                         remind_after,
                     )
                     .await?,
@@ -901,6 +918,7 @@ async fn notify_check(
                         status,
                         &message,
                         admin_email,
+                        webhook_url.as_deref(),
                         remind_after,
                     )
                     .await?,
@@ -932,7 +950,8 @@ async fn process_check(
     label: &str,
     status: havenmail_core::notify::CheckStatus,
     message: &str,
-    admin_email: &str,
+    admin_email: Option<&str>,
+    webhook_url: Option<&str>,
     remind_after: chrono::Duration,
 ) -> Result<Value, String> {
     let now = chrono::Utc::now();
@@ -973,31 +992,49 @@ async fn process_check(
         };
         let subject = format!("[Havenmail] {prefix}: {label}");
         let body = format!("{intro}\n\n{message}\n\n— Havenmail Systembenachrichtigung");
-        match havenmail_core::notify::send_admin_email(admin_email, &subject, &body).await {
-            Ok(()) => {
-                sent = true;
-                let action = match kind {
-                    havenmail_core::notify::NotifyKind::Alert => "notify.alert",
-                    havenmail_core::notify::NotifyKind::Reminder => "notify.reminder",
-                    havenmail_core::notify::NotifyKind::Resolved => "notify.resolved",
-                };
-                if let Err(err) = havenmail_core::audit::record(
-                    pool,
-                    None,
-                    action,
-                    check_key,
-                    None,
-                    None,
-                    Some(json!({ "message": message })),
-                    None,
-                )
-                .await
-                {
-                    eprintln!("Warnung: Audit-Log-Eintrag für {check_key} fehlgeschlagen: {err}");
-                }
+
+        let mut any_channel_sent = false;
+        if let Some(email) = admin_email {
+            match havenmail_core::notify::send_admin_email(email, &subject, &body).await {
+                Ok(()) => any_channel_sent = true,
+                Err(err) => eprintln!(
+                    "Warnung: E-Mail-Benachrichtigung für {check_key} konnte nicht verschickt werden: {err}"
+                ),
             }
-            Err(err) => {
-                eprintln!("Warnung: Benachrichtigung für {check_key} konnte nicht verschickt werden: {err}");
+        }
+        if let Some(url) = webhook_url {
+            // Eigener, kompakterer Text als die E-Mail (Chat-Nachrichten
+            // sind auf einen Blick lesbar, kein Betreff-Feld) — dieselben
+            // drei Fälle (Alert/Reminder/Resolved).
+            let webhook_text = format!("*{subject}*\n{intro}\n{message}");
+            match havenmail_core::notify::send_webhook(url, &webhook_text).await {
+                Ok(()) => any_channel_sent = true,
+                Err(err) => eprintln!(
+                    "Warnung: Webhook-Benachrichtigung für {check_key} konnte nicht verschickt werden: {err}"
+                ),
+            }
+        }
+
+        if any_channel_sent {
+            sent = true;
+            let action = match kind {
+                havenmail_core::notify::NotifyKind::Alert => "notify.alert",
+                havenmail_core::notify::NotifyKind::Reminder => "notify.reminder",
+                havenmail_core::notify::NotifyKind::Resolved => "notify.resolved",
+            };
+            if let Err(err) = havenmail_core::audit::record(
+                pool,
+                None,
+                action,
+                check_key,
+                None,
+                None,
+                Some(json!({ "message": message })),
+                None,
+            )
+            .await
+            {
+                eprintln!("Warnung: Audit-Log-Eintrag für {check_key} fehlgeschlagen: {err}");
             }
         }
     }

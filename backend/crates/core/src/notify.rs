@@ -104,6 +104,23 @@ pub async fn send_admin_email(to: &str, subject: &str, body: &str) -> std::io::R
     Ok(())
 }
 
+/// Schickt eine Slack-kompatible Webhook-Nachricht (`{"text": "..."}` per
+/// POST) — dasselbe Minimalformat akzeptieren auch Mattermost und viele
+/// andere Chat-Tools mit "Incoming Webhook"-Integration, kein
+/// Slack-spezifisches SDK nötig. Eigener `reqwest::Client` pro Aufruf statt
+/// eines geteilten (dieser Pfad läuft nur alle paar Minuten über den
+/// `notify-check`-Timer, kein Verbindungs-Pooling nötig — anders als
+/// `RspamdClient`, der pro API-Request aufgerufen wird).
+pub async fn send_webhook(url: &str, text: &str) -> Result<(), reqwest::Error> {
+    let client = reqwest::Client::new();
+    let response = client
+        .post(url)
+        .json(&serde_json::json!({ "text": text }))
+        .send()
+        .await?;
+    response.error_for_status().map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

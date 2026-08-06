@@ -25,6 +25,18 @@ export default function SpamSettings() {
   const [pwSuccess, setPwSuccess] = useState(false)
   const [pwSubmitting, setPwSubmitting] = useState(false)
 
+  // Webhook ist ebenfalls ein eigenes Feld derselben Zeile mit eigenem
+  // PATCH-Endpunkt (kein Rspamd-Bezug) — dazu ein separater Testversand,
+  // der die gerade eingegebene URL prüft, auch bevor sie gespeichert ist.
+  const [webhookUrl, setWebhookUrl] = useState('')
+  const [webhookEnabled, setWebhookEnabled] = useState(false)
+  const [webhookError, setWebhookError] = useState<string | null>(null)
+  const [webhookSuccess, setWebhookSuccess] = useState(false)
+  const [webhookSubmitting, setWebhookSubmitting] = useState(false)
+  const [testError, setTestError] = useState<string | null>(null)
+  const [testSuccess, setTestSuccess] = useState(false)
+  const [testing, setTesting] = useState(false)
+
   useEffect(() => {
     api.securitySettings
       .get()
@@ -40,6 +52,8 @@ export default function SpamSettings() {
           ratelimit_burst: s.ratelimit_burst,
         })
         setMinPasswordLength(s.min_password_length)
+        setWebhookUrl(s.webhook_url ?? '')
+        setWebhookEnabled(s.webhook_enabled)
       })
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 403) {
@@ -79,6 +93,39 @@ export default function SpamSettings() {
       setPwError(err instanceof ApiError ? err.message : 'Speichern fehlgeschlagen')
     } finally {
       setPwSubmitting(false)
+    }
+  }
+
+  async function onSubmitWebhook(e: FormEvent) {
+    e.preventDefault()
+    setWebhookError(null)
+    setWebhookSuccess(false)
+    setWebhookSubmitting(true)
+    try {
+      const updated = await api.securitySettings.updateWebhook(
+        webhookUrl.trim() === '' ? null : webhookUrl.trim(),
+        webhookEnabled,
+      )
+      setSettings(updated)
+      setWebhookSuccess(true)
+    } catch (err) {
+      setWebhookError(err instanceof ApiError ? err.message : 'Speichern fehlgeschlagen')
+    } finally {
+      setWebhookSubmitting(false)
+    }
+  }
+
+  async function onTestWebhook() {
+    setTestError(null)
+    setTestSuccess(false)
+    setTesting(true)
+    try {
+      await api.securitySettings.testWebhook(webhookUrl.trim())
+      setTestSuccess(true)
+    } catch (err) {
+      setTestError(err instanceof ApiError ? err.message : 'Testversand fehlgeschlagen')
+    } finally {
+      setTesting(false)
     }
   }
 
@@ -217,6 +264,60 @@ export default function SpamSettings() {
             <button type="submit" disabled={pwSubmitting}>
               {pwSubmitting ? 'Speichere…' : 'Speichern'}
             </button>
+          </form>
+        </div>
+      )}
+      {!forbidden && settings && (
+        <div className="card">
+          <h2>Webhook-Benachrichtigungen</h2>
+          <p className="muted">
+            Zweiter Kanal neben der Admin-E-Mail für Systemalarme (siehe{' '}
+            <code>havenmail-cli notify-check</code>) — Slack-kompatibles JSON-Format, wird auch
+            von Mattermost & vielen anderen Chat-Tools mit Incoming-Webhook akzeptiert.
+          </p>
+          <form onSubmit={onSubmitWebhook}>
+            <label>
+              Webhook-URL
+              <input
+                type="url"
+                placeholder="https://hooks.example.org/services/…"
+                value={webhookUrl}
+                onChange={(e) => setWebhookUrl(e.target.value)}
+              />
+              <small>Muss mit https:// beginnen. Leer lassen, um den Webhook zu entfernen.</small>
+            </label>
+            <label className="checkbox-field">
+              <input
+                type="checkbox"
+                checked={webhookEnabled}
+                onChange={(e) => setWebhookEnabled(e.target.checked)}
+              />
+              Aktiv (erfordert eine gesetzte URL)
+            </label>
+            {webhookError && (
+              <p className="error" role="alert">
+                {webhookError}
+              </p>
+            )}
+            {webhookSuccess && <p className="badge badge-ready">Gespeichert</p>}
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              <button type="submit" disabled={webhookSubmitting}>
+                {webhookSubmitting ? 'Speichere…' : 'Speichern'}
+              </button>
+              <button
+                type="button"
+                disabled={testing || webhookUrl.trim() === ''}
+                onClick={onTestWebhook}
+              >
+                {testing ? 'Sende…' : 'Test senden'}
+              </button>
+              {testSuccess && <span className="badge badge-ready">Testnachricht gesendet</span>}
+            </div>
+            {testError && (
+              <p className="error" role="alert">
+                {testError}
+              </p>
+            )}
           </form>
         </div>
       )}

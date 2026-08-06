@@ -154,6 +154,14 @@ pub fn router() -> Router<AppState> {
                 .patch(security_settings::update_password_policy),
         )
         .route(
+            "/api/v1/system/webhook-settings",
+            patch(security_settings::update_webhook_settings),
+        )
+        .route(
+            "/api/v1/system/webhook-settings/test",
+            post(security_settings::test_webhook),
+        )
+        .route(
             "/api/v1/system/mail-queue",
             get(mail_queue::list_mail_queue).delete(mail_queue::delete_all_queue),
         )

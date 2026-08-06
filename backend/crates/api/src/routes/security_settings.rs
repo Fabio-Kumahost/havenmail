@@ -38,12 +38,15 @@ pub struct SecuritySettings {
     pub antivirus_action: String,
     pub antivirus_max_size_mb: i32,
     pub min_password_length: i32,
+    pub webhook_url: Option<String>,
+    pub webhook_enabled: bool,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 const SELECT_COLUMNS: &str = "spam_greylist_score, spam_add_header_score, spam_reject_score, \
      dmarc_enabled, ratelimit_enabled, ratelimit_per_hour, ratelimit_burst, \
-     antivirus_enabled, antivirus_action, antivirus_max_size_mb, min_password_length, updated_at";
+     antivirus_enabled, antivirus_action, antivirus_max_size_mb, min_password_length, \
+     webhook_url, webhook_enabled, updated_at";
 
 /// Aktuelle Mindestpasswortlänge — ersetzt die vier vormals hart codierten
 /// `len() < 12`-Prüfungen in `routes/users.rs`. Ein einzelner `SELECT`
@@ -299,6 +302,111 @@ pub async fn update_password_policy(
     .await;
 
     Ok(Json(updated))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateWebhookRequest {
+    /// `None`/leerer String löscht die URL (Webhook wird dabei implizit
+    /// deaktiviert, s.u.) — anders als bei der Rate-Limit-Domain-
+    /// Überschreibung reicht hier ein einfaches "leer = löschen" statt
+    /// eines eigenen Tri-State-Feldes, da diese Zeile ohnehin nur ein
+    /// Nutzer (super_admin) über ein einzelnes Formular pflegt.
+    pub webhook_url: Option<String>,
+    pub webhook_enabled: bool,
+}
+
+/// Anders als Spam-/Virus-/Passwort-Einstellungen hat der Webhook keine
+/// Entsprechung in einer Rspamd-Konfigurationsdatei — reines DB-Feld,
+/// gelesen von `havenmail-cli notify-check` bei jedem Lauf, daher kein
+/// `apply_to_rspamd`-Aufruf nötig.
+pub async fn update_webhook_settings(
+    State(state): State<AppState>,
+    AuthUser(actor): AuthUser,
+    headers: HeaderMap,
+    Json(req): Json<UpdateWebhookRequest>,
+) -> ApiResult<Json<SecuritySettings>> {
+    if !actor.can(Action::ManageSystemSettings, None) {
+        return Err(ApiError::Forbidden);
+    }
+    let url = req.webhook_url.filter(|u| !u.trim().is_empty());
+    // Nur https:// zulassen — verhindert sowohl offensichtlichen Unfug
+    // (javascript:, data:) als auch ein versehentliches Klartext-http://
+    // für einen Webhook, der i. d. R. ein Secret-Token in der URL trägt.
+    if let Some(u) = &url {
+        if !u.starts_with("https://") {
+            return Err(ApiError::BadRequest(
+                "webhook_url muss mit https:// beginnen".to_string(),
+            ));
+        }
+    }
+    // Aktivieren ohne gesetzte URL ergibt keinen Sinn — verhindert einen
+    // Zustand, in dem `notify-check` bei jedem Lauf erfolglos gegen eine
+    // leere URL läuft.
+    if req.webhook_enabled && url.is_none() {
+        return Err(ApiError::BadRequest(
+            "webhook_enabled erfordert eine gesetzte webhook_url".to_string(),
+        ));
+    }
+    let current = fetch_settings(&state.db).await?;
+
+    let updated: SecuritySettings = sqlx::query_as(&format!(
+        r#"
+        UPDATE security_settings SET
+            webhook_url = $1, webhook_enabled = $2,
+            updated_at = now(), updated_by = $3
+        WHERE id = 1
+        RETURNING {SELECT_COLUMNS}
+        "#
+    ))
+    .bind(&url)
+    .bind(req.webhook_enabled)
+    .bind(actor.user_id)
+    .fetch_one(&state.db)
+    .await?;
+
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "security_settings.update_webhook",
+        "security_settings",
+        None,
+        serde_json::to_value(&current).ok(),
+        serde_json::to_value(&updated).ok(),
+    )
+    .await;
+
+    Ok(Json(updated))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TestWebhookRequest {
+    /// Testet die im Formular eingegebene URL, nicht zwingend die
+    /// gespeicherte — ein Admin soll eine URL ausprobieren können, bevor
+    /// er sie speichert (bzw. bevor `webhook_enabled` gesetzt wird).
+    pub webhook_url: String,
+}
+
+pub async fn test_webhook(
+    AuthUser(actor): AuthUser,
+    Json(req): Json<TestWebhookRequest>,
+) -> ApiResult<Json<serde_json::Value>> {
+    if !actor.can(Action::ManageSystemSettings, None) {
+        return Err(ApiError::Forbidden);
+    }
+    if !req.webhook_url.starts_with("https://") {
+        return Err(ApiError::BadRequest(
+            "webhook_url muss mit https:// beginnen".to_string(),
+        ));
+    }
+    havenmail_core::notify::send_webhook(
+        &req.webhook_url,
+        "Havenmail: Testnachricht — wenn du das hier siehst, funktioniert der Webhook.",
+    )
+    .await
+    .map_err(|e| ApiError::BadRequest(format!("Webhook-Test fehlgeschlagen: {e}")))?;
+
+    Ok(Json(serde_json::json!({ "status": "gesendet" })))
 }
 
 #[derive(Debug, FromRow)]

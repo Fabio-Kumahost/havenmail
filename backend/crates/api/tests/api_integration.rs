@@ -1739,3 +1739,135 @@ async fn vacation_responder_is_scoped_validated_and_self_service_works() {
     assert_eq!(body["message"], json!("Testtext"));
     assert_eq!(body["enabled"], json!(false));
 }
+
+#[tokio::test]
+async fn webhook_settings_are_validated_persisted_and_super_admin_only() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (super_email, super_password) = bootstrap_super_admin(&db).await;
+    let super_token = login(&app, &super_email, &super_password).await;
+
+    let domain_name = format!("webhook-{}.test", Uuid::new_v4());
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": domain_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let domain_id = body["id"].as_str().unwrap().to_string();
+    let admin_password = "webhook-domain-admin-pw!!";
+    let (status, _) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_id}/users"),
+        Some(&super_token),
+        Some(json!({ "local_part": "admin", "password": admin_password, "role": "domain_admin" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let admin_token = login(&app, &format!("admin@{domain_name}"), admin_password).await;
+
+    // domain_admin darf weder die Einstellungen ändern noch testen.
+    let (status, _) = call(
+        &app,
+        "PATCH",
+        "/api/v1/system/webhook-settings",
+        Some(&admin_token),
+        Some(json!({ "webhook_url": "https://hooks.example.org/x", "webhook_enabled": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let (status, _) = call(
+        &app,
+        "POST",
+        "/api/v1/system/webhook-settings/test",
+        Some(&admin_token),
+        Some(json!({ "webhook_url": "https://hooks.example.org/x" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // http:// (statt https://) wird abgelehnt.
+    let (status, body) = call(
+        &app,
+        "PATCH",
+        "/api/v1/system/webhook-settings",
+        Some(&super_token),
+        Some(json!({ "webhook_url": "http://hooks.example.org/x", "webhook_enabled": false })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body:?}");
+
+    // Aktivieren ohne (gültige) URL wird abgelehnt.
+    let (status, body) = call(
+        &app,
+        "PATCH",
+        "/api/v1/system/webhook-settings",
+        Some(&super_token),
+        Some(json!({ "webhook_url": null, "webhook_enabled": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body:?}");
+
+    // Gültige https://-URL wird gespeichert und bei GET reflektiert.
+    let (status, updated) = call(
+        &app,
+        "PATCH",
+        "/api/v1/system/webhook-settings",
+        Some(&super_token),
+        Some(json!({ "webhook_url": "https://hooks.example.org/services/x", "webhook_enabled": true })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{updated:?}");
+    assert_eq!(
+        updated["webhook_url"],
+        json!("https://hooks.example.org/services/x")
+    );
+    assert_eq!(updated["webhook_enabled"], json!(true));
+
+    let (status, settings) = call(
+        &app,
+        "GET",
+        "/api/v1/system/security-settings",
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{settings:?}");
+    assert_eq!(
+        settings["webhook_url"],
+        json!("https://hooks.example.org/services/x")
+    );
+
+    // Leere URL löscht sie wieder (und deaktiviert implizit, da enabled
+    // ohne URL nicht erlaubt ist).
+    let (status, cleared) = call(
+        &app,
+        "PATCH",
+        "/api/v1/system/webhook-settings",
+        Some(&super_token),
+        Some(json!({ "webhook_url": "", "webhook_enabled": false })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{cleared:?}");
+    assert_eq!(cleared["webhook_url"], Value::Null);
+    assert_eq!(cleared["webhook_enabled"], json!(false));
+
+    // Testversand mit ungültiger URL wird schon vor jedem Netzwerkzugriff
+    // abgelehnt (der Erfolgsfall braucht eine echte erreichbare URL und
+    // wird deshalb nur live verifiziert, siehe Commit-Beschreibung).
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/system/webhook-settings/test",
+        Some(&super_token),
+        Some(json!({ "webhook_url": "not-a-url" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body:?}");
+}
