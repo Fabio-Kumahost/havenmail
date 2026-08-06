@@ -99,7 +99,9 @@ pub async fn delete_queue_entry(
     )
     .await;
 
-    Ok(Json(serde_json::json!({ "status": if removed { "deleted" } else { "pending" } })))
+    Ok(Json(
+        serde_json::json!({ "status": if removed { "deleted" } else { "pending" } }),
+    ))
 }
 
 pub async fn delete_all_queue(

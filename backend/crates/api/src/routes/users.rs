@@ -309,12 +309,11 @@ pub async fn change_own_password(
         ));
     }
 
-    let row: PasswordHashRow =
-        sqlx::query_as("SELECT password_hash FROM users WHERE id = $1")
-            .bind(actor.user_id)
-            .fetch_optional(&state.db)
-            .await?
-            .ok_or(ApiError::NotFound)?;
+    let row: PasswordHashRow = sqlx::query_as("SELECT password_hash FROM users WHERE id = $1")
+        .bind(actor.user_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(ApiError::NotFound)?;
 
     if !password::verify_password(&req.current_password, &row.password_hash) {
         return Err(ApiError::BadRequest(

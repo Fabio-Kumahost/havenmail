@@ -48,7 +48,12 @@ pub fn signature_age(clamav_lib_dir: &Path) -> Option<i64> {
     let candidates = ["daily.cvd", "daily.cld"];
     let newest = candidates
         .iter()
-        .filter_map(|name| std::fs::metadata(clamav_lib_dir.join(name)).ok()?.modified().ok())
+        .filter_map(|name| {
+            std::fs::metadata(clamav_lib_dir.join(name))
+                .ok()?
+                .modified()
+                .ok()
+        })
         .max()?;
     let age = std::time::SystemTime::now().duration_since(newest).ok()?;
     Some(age.as_secs() as i64 / 3600)
@@ -72,7 +77,10 @@ mod tests {
 
     #[test]
     fn missing_file_yields_zero_not_error() {
-        assert_eq!(detected_since(Path::new("/nonexistent/clamav.log"), Utc::now()), 0);
+        assert_eq!(
+            detected_since(Path::new("/nonexistent/clamav.log"), Utc::now()),
+            0
+        );
     }
 
     fn tempfile_with_content(content: &str) -> tempfile_shim::NamedTempFile {
@@ -94,8 +102,10 @@ mod tests {
 
         impl NamedTempFile {
             pub fn new() -> Self {
-                let path = std::env::temp_dir()
-                    .join(format!("havenmail-clamav-test-{}.log", uuid::Uuid::new_v4()));
+                let path = std::env::temp_dir().join(format!(
+                    "havenmail-clamav-test-{}.log",
+                    uuid::Uuid::new_v4()
+                ));
                 Self { path }
             }
 

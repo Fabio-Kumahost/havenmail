@@ -180,14 +180,11 @@ mod tests {
     use super::*;
     use chrono::TimeZone;
 
-    fn snapshot_row(
-        minute: u32,
-        scanned: i64,
-        spam: i64,
-        ham: i64,
-    ) -> MetricsSnapshotRow {
+    fn snapshot_row(minute: u32, scanned: i64, spam: i64, ham: i64) -> MetricsSnapshotRow {
         MetricsSnapshotRow {
-            captured_at: chrono::Utc.with_ymd_and_hms(2026, 1, 1, 0, minute, 0).unwrap(),
+            captured_at: chrono::Utc
+                .with_ymd_and_hms(2026, 1, 1, 0, minute, 0)
+                .unwrap(),
             rspamd_scanned: Some(scanned),
             rspamd_spam_count: Some(spam),
             rspamd_ham_count: Some(ham),
@@ -220,7 +217,10 @@ mod tests {
         // Rspamd-Neustart setzt kumulative Zähler zurück auf 0 — ein
         // negatives Delta wäre irreführend im Chart, also None statt
         // eines falschen negativen Werts.
-        let points = compute_deltas(vec![snapshot_row(0, 100, 10, 90), snapshot_row(15, 5, 1, 4)]);
+        let points = compute_deltas(vec![
+            snapshot_row(0, 100, 10, 90),
+            snapshot_row(15, 5, 1, 4),
+        ]);
         assert_eq!(points[1].spam_delta, None);
     }
 }

@@ -82,8 +82,12 @@ pub async fn update_spam_settings(
     }
     let current = fetch_settings(&state.db).await?;
 
-    let greylist = req.spam_greylist_score.unwrap_or(current.spam_greylist_score);
-    let add_header = req.spam_add_header_score.unwrap_or(current.spam_add_header_score);
+    let greylist = req
+        .spam_greylist_score
+        .unwrap_or(current.spam_greylist_score);
+    let add_header = req
+        .spam_add_header_score
+        .unwrap_or(current.spam_add_header_score);
     let reject = req.spam_reject_score.unwrap_or(current.spam_reject_score);
     if !(greylist < add_header && add_header < reject) {
         return Err(ApiError::BadRequest(
@@ -154,13 +158,17 @@ pub async fn update_virus_settings(
     }
     let current = fetch_settings(&state.db).await?;
 
-    let action = req.antivirus_action.unwrap_or(current.antivirus_action.clone());
+    let action = req
+        .antivirus_action
+        .unwrap_or(current.antivirus_action.clone());
     if !["reject", "add_header", "no_action"].contains(&action.as_str()) {
         return Err(ApiError::BadRequest(
             "antivirus_action muss reject, add_header oder no_action sein".to_string(),
         ));
     }
-    let max_size = req.antivirus_max_size_mb.unwrap_or(current.antivirus_max_size_mb);
+    let max_size = req
+        .antivirus_max_size_mb
+        .unwrap_or(current.antivirus_max_size_mb);
     if max_size < 1 {
         return Err(ApiError::BadRequest(
             "antivirus_max_size_mb muss mindestens 1 sein".to_string(),

@@ -300,9 +300,14 @@ async fn main() {
             clamav_log_path,
             clamav_lib_dir,
             mail_spool_path,
-        } => snapshot_metrics(&database_url, &clamav_log_path, &clamav_lib_dir, &mail_spool_path)
-            .await
-            .map_err(|e| e.to_string()),
+        } => snapshot_metrics(
+            &database_url,
+            &clamav_log_path,
+            &clamav_lib_dir,
+            &mail_spool_path,
+        )
+        .await
+        .map_err(|e| e.to_string()),
         Command::Fail2banRefreshStatus { status_file } => {
             havenmail_core::fail2ban::refresh_status(&status_file)
                 .await
@@ -493,11 +498,13 @@ async fn bootstrap_admin(
             "domain_id": domain_id,
             "user_id": user_id,
         }),
-        havenmail_core::bootstrap::BootstrapOutcome::AlreadyExists { domain_id, user_id } => json!({
-            "status": "already_exists",
-            "domain_id": domain_id,
-            "user_id": user_id,
-        }),
+        havenmail_core::bootstrap::BootstrapOutcome::AlreadyExists { domain_id, user_id } => {
+            json!({
+                "status": "already_exists",
+                "domain_id": domain_id,
+                "user_id": user_id,
+            })
+        }
     })
 }
 
@@ -517,18 +524,21 @@ async fn snapshot_metrics(
         .await
         .map_err(|e| e.to_string())?;
 
-    let last_captured_at: Option<chrono::DateTime<chrono::Utc>> =
-        sqlx::query_scalar("SELECT captured_at FROM metrics_snapshots ORDER BY captured_at DESC LIMIT 1")
-            .fetch_optional(&pool)
-            .await
-            .map_err(|e| e.to_string())?;
-    let clamav_since = last_captured_at.unwrap_or_else(|| chrono::Utc::now() - chrono::Duration::hours(1));
+    let last_captured_at: Option<chrono::DateTime<chrono::Utc>> = sqlx::query_scalar(
+        "SELECT captured_at FROM metrics_snapshots ORDER BY captured_at DESC LIMIT 1",
+    )
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    let clamav_since =
+        last_captured_at.unwrap_or_else(|| chrono::Utc::now() - chrono::Duration::hours(1));
 
     let stat = havenmail_core::rspamd_client::RspamdClient::default()
         .stat()
         .await
         .ok();
-    let clamav_detected = havenmail_core::clamav_stats::detected_since(clamav_log_path, clamav_since);
+    let clamav_detected =
+        havenmail_core::clamav_stats::detected_since(clamav_log_path, clamav_since);
     let signature_age = havenmail_core::clamav_stats::signature_age(clamav_lib_dir);
     let queue_size = havenmail_core::mail_queue::queue_size().await;
     let disk_used_percent = disk_used_percent(mail_spool_path).await;
@@ -683,7 +693,7 @@ fn list_backup_history(backup_dir: &std::path::Path) -> Vec<Value> {
             Some((name, meta.len(), meta.modified().ok()?))
         })
         .collect();
-    items.sort_by(|a, b| b.2.cmp(&a.2));
+    items.sort_by_key(|(_, _, mtime)| std::cmp::Reverse(*mtime));
     items
         .into_iter()
         .map(|(name, size, mtime)| {
@@ -730,7 +740,10 @@ async fn notify_check(
         let (status, message) = match tls.days_remaining {
             Some(days) if days < tls_warn_days => (
                 havenmail_core::notify::CheckStatus::Problem,
-                format!("TLS-Zertifikat läuft in {days} Tagen ab ({}).", tls.expires_at),
+                format!(
+                    "TLS-Zertifikat läuft in {days} Tagen ab ({}).",
+                    tls.expires_at
+                ),
             ),
             _ => (
                 havenmail_core::notify::CheckStatus::Ok,
@@ -738,8 +751,16 @@ async fn notify_check(
             ),
         };
         results.push(
-            process_check(&pool, "tls_expiry", "TLS-Zertifikat", status, &message, admin_email, remind_after)
-                .await?,
+            process_check(
+                &pool,
+                "tls_expiry",
+                "TLS-Zertifikat",
+                status,
+                &message,
+                admin_email,
+                remind_after,
+            )
+            .await?,
         );
     }
 
@@ -761,8 +782,16 @@ async fn notify_check(
         };
         let message = format!("Speicherauslastung (Maildaten): {percent:.1}%.");
         results.push(
-            process_check(&pool, "disk_usage", "Speicherplatz", status, &message, admin_email, remind_after)
-                .await?,
+            process_check(
+                &pool,
+                "disk_usage",
+                "Speicherplatz",
+                status,
+                &message,
+                admin_email,
+                remind_after,
+            )
+            .await?,
         );
     }
 
@@ -778,7 +807,18 @@ async fn notify_check(
         let message = format!("Dienst {unit}: {}.", service.detail);
         let check_key = format!("service:{unit}");
         let label = format!("Dienst {unit}");
-        results.push(process_check(&pool, &check_key, &label, status, &message, admin_email, remind_after).await?);
+        results.push(
+            process_check(
+                &pool,
+                &check_key,
+                &label,
+                status,
+                &message,
+                admin_email,
+                remind_after,
+            )
+            .await?,
+        );
     }
 
     // Letztes Backup (Status-Datei von havenmail-cli backup-run, siehe
@@ -786,7 +826,10 @@ async fn notify_check(
     if let Ok(content) = std::fs::read_to_string(backup_status_file) {
         if let Ok(value) = serde_json::from_str::<Value>(&content) {
             if let Some(last_run) = value.get("last_run").filter(|v| !v.is_null()) {
-                let run_status = last_run.get("status").and_then(|v| v.as_str()).unwrap_or("");
+                let run_status = last_run
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let (status, message) = if run_status == "failed" {
                     let error = last_run
                         .get("error")
@@ -803,7 +846,16 @@ async fn notify_check(
                     )
                 };
                 results.push(
-                    process_check(&pool, "backup", "Backup", status, &message, admin_email, remind_after).await?,
+                    process_check(
+                        &pool,
+                        "backup",
+                        "Backup",
+                        status,
+                        &message,
+                        admin_email,
+                        remind_after,
+                    )
+                    .await?,
                 );
             }
         }
@@ -837,12 +889,13 @@ async fn process_check(
 ) -> Result<Value, String> {
     let now = chrono::Utc::now();
 
-    let previous: Option<(String, Option<chrono::DateTime<chrono::Utc>>)> =
-        sqlx::query_as("SELECT status, last_notified_at FROM notification_state WHERE check_key = $1")
-            .bind(check_key)
-            .fetch_optional(pool)
-            .await
-            .map_err(|e| e.to_string())?;
+    let previous: Option<(String, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
+        "SELECT status, last_notified_at FROM notification_state WHERE check_key = $1",
+    )
+    .bind(check_key)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| e.to_string())?;
 
     let previous_decoded = previous.as_ref().map(|(s, t)| {
         (
@@ -852,14 +905,16 @@ async fn process_check(
         )
     });
 
-    let kind = havenmail_core::notify::decide_notification(status, previous_decoded, now, remind_after);
+    let kind =
+        havenmail_core::notify::decide_notification(status, previous_decoded, now, remind_after);
 
     let mut sent = false;
     if let Some(kind) = kind {
         let (prefix, intro) = match kind {
-            havenmail_core::notify::NotifyKind::Alert => {
-                ("ALARM", format!("Für „{label}“ liegt ein neues Problem vor."))
-            }
+            havenmail_core::notify::NotifyKind::Alert => (
+                "ALARM",
+                format!("Für „{label}“ liegt ein neues Problem vor."),
+            ),
             havenmail_core::notify::NotifyKind::Reminder => (
                 "Erinnerung",
                 format!("Für „{label}“ besteht das Problem weiterhin."),

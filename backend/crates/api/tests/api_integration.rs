@@ -376,7 +376,14 @@ async fn system_status_requires_super_admin_and_reports_database_up() {
     let (super_email, super_password) = bootstrap_super_admin(&db).await;
     let super_token = login(&app, &super_email, &super_password).await;
 
-    let (status, body) = call(&app, "GET", "/api/v1/system/status", Some(&super_token), None).await;
+    let (status, body) = call(
+        &app,
+        "GET",
+        "/api/v1/system/status",
+        Some(&super_token),
+        None,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "{body:?}");
     assert_eq!(body["database"], json!(true));
     let services = body["services"].as_array().expect("services ist ein Array");
@@ -454,14 +461,7 @@ async fn audit_log_records_domain_mutations_and_scopes_domain_admin() {
     let admin_token = login(&app, &admin_email, admin_password).await;
 
     // domain_admin sieht nur Einträge der eigenen Domain (domain_id-Query wird ignoriert).
-    let (status, body) = call(
-        &app,
-        "GET",
-        "/api/v1/audit-log",
-        Some(&admin_token),
-        None,
-    )
-    .await;
+    let (status, body) = call(&app, "GET", "/api/v1/audit-log", Some(&admin_token), None).await;
     assert_eq!(status, StatusCode::OK, "{body:?}");
     let entries = body.as_array().expect("audit-log ist ein Array");
     assert!(!entries.is_empty());
@@ -547,7 +547,12 @@ async fn audit_log_covers_aliases_distribution_lists_and_dkim() {
     .await;
     assert_eq!(status, StatusCode::OK, "{body:?}");
     let entries = body.as_array().expect("audit-log ist ein Array");
-    for expected_action in ["alias.create", "alias.delete", "distribution_list.create", "dkim.generate"] {
+    for expected_action in [
+        "alias.create",
+        "alias.delete",
+        "distribution_list.create",
+        "dkim.generate",
+    ] {
         assert!(
             entries.iter().any(|e| e["action"] == expected_action),
             "erwartete Aktion '{expected_action}' fehlt im Audit-Log: {entries:?}"

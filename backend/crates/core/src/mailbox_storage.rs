@@ -35,7 +35,10 @@ mod tests {
 
     #[test]
     fn parses_tab_separated_du_output() {
-        assert_eq!(parse_du_output("44725\t/var/mail/havenmail/x/y\n"), Some(44725));
+        assert_eq!(
+            parse_du_output("44725\t/var/mail/havenmail/x/y\n"),
+            Some(44725)
+        );
     }
 
     #[test]

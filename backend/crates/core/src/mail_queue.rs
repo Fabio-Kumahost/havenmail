@@ -45,7 +45,11 @@ fn parse_queue_size(output: &str) -> usize {
     output
         .lines()
         .filter(|l| !l.trim().is_empty() && !l.starts_with('-') && !l.starts_with(' '))
-        .filter(|l| l.split_whitespace().next().is_some_and(|first| first.len() > 1))
+        .filter(|l| {
+            l.split_whitespace()
+                .next()
+                .is_some_and(|first| first.len() > 1)
+        })
         .count()
         .saturating_sub(1) // Kopfzeile ("-Queue ID-  --Size--  ...")
 }

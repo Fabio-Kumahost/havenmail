@@ -209,8 +209,12 @@ mod tests {
 
     #[test]
     fn renders_nginx_full_vhost_with_tls_and_proxy_target() {
-        let out = render_template(&repo_config_dir(), "nginx/havenmail.conf.tera", &sample_context())
-            .expect("Rendering sollte gelingen");
+        let out = render_template(
+            &repo_config_dir(),
+            "nginx/havenmail.conf.tera",
+            &sample_context(),
+        )
+        .expect("Rendering sollte gelingen");
         assert!(out.contains("ssl_certificate /etc/havenmail/tls/fullchain.pem"));
         assert!(out.contains("proxy_pass http://127.0.0.1:8080"));
         assert!(out.contains("root /opt/havenmail/frontend/dist"));

@@ -58,8 +58,8 @@ impl Default for RspamdClient {
     /// Basis-URL per `RSPAMD_CONTROLLER_URL` überschreibbar (Tests, oder
     /// falls Rspamd künftig auf einem anderen Host läuft).
     fn default() -> Self {
-        let base_url = std::env::var("RSPAMD_CONTROLLER_URL")
-            .unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
+        let base_url =
+            std::env::var("RSPAMD_CONTROLLER_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
         Self {
             base_url,
             http: reqwest::Client::new(),
