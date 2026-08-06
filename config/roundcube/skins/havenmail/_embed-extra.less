@@ -1,0 +1,33 @@
+/**
+ * Zusatzregeln speziell für embed.css — die Nachrichtenanzeige (HTML-
+ * Mails, TinyMCE-Editor-Vorschau) läuft in einem eigenen, sandboxten
+ * iframe mit eigenem Stylesheet (embed.css, kompiliert aus embed.less).
+ * _styles.less wird NUR in styles.less eingebunden und erreicht diesen
+ * iframe deshalb nicht — ohne diese Datei bleibt der iframe-Hintergrund
+ * beim Browser-Standard (weiß), unabhängig vom sonstigen dunklen Theme
+ * (live als heller "Fleck" mitten in der Nachrichtenansicht aufgefallen).
+ *
+ * Wird an das kompilierte embed.css angehängt (siehe
+ * havenmail_deploy_roundcube_skin), nicht per LESS @import eingebunden.
+ */
+
+@import (reference) "colors";
+
+html,
+body,
+.mce-content-body {
+    background-color: @color-layout-content-background;
+    color: @color-input;
+}
+
+.mce-content-body a {
+    color: @color-link;
+}
+
+.mce-content-body blockquote {
+    background-color: fade(@color-main, 8%);
+    border-left: 2px solid @color-main;
+    color: @color-font;
+    margin: 2px 0;
+    padding: 0 0.4em;
+}

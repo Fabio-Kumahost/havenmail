@@ -101,3 +101,65 @@ h1.voice,
     margin-right: 6px;
     vertical-align: middle;
 }
+
+// Durchgängig weichere/rundere Ecken statt Bootstraps knappen
+// 0.25–0.3rem-Standardwerten — auf Nutzerwunsch "runder" gemacht. Gezielt
+// je Elementklasse statt pauschal über "*", um Icons/Checkboxen/Kreis-
+// Elemente (Avatare, Punkt-Indikatoren) nicht zu verzerren.
+.btn,
+button:not(.toolbar button),
+a.button .inner,
+.form-control,
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="search"],
+input[type="number"],
+input[type="date"],
+textarea,
+select,
+.searchbar input,
+.select2-selection {
+    border-radius: 10px !important;
+}
+#taskmenu .button .inner,
+#toolbar-menu .inner,
+.popover-header,
+.listing tr.message,
+.listing tr.contact,
+.message-part,
+.message-htmlpart,
+.message-partheaders,
+.rcmail-inline-message,
+.notifications-area .notice,
+.popupmenu,
+.popover .menu {
+    border-radius: 12px;
+}
+.listing tr.selected,
+.listing tr.selected td:first-child,
+#contacts-table tr.selected td:first-child {
+    border-radius: 10px 0 0 10px;
+}
+#layout-menu,
+#layout-sidebar,
+.uidialog,
+.ui-dialog {
+    border-radius: 0 16px 16px 0;
+}
+img.avatar,
+.contactpic,
+.list-message .avatar {
+    border-radius: 50%;
+}
+
+// embed.css (Nachrichtenanzeige läuft in einem eigenen sandboxten iframe,
+// bekommt _styles.less NICHT mit) bekommt ihren dunklen Hintergrund über
+// eine separate, an embed.css angehängte Kompilierung — siehe
+// _embed-extra.less/havenmail_deploy_roundcube_skin. Hier nur der
+// zugehörige Rahmen um den iframe selbst, der sehrwohl über styles.less läuft.
+#messagebody iframe,
+.message-htmlpart iframe {
+    border-radius: 12px;
+    overflow: hidden;
+}
