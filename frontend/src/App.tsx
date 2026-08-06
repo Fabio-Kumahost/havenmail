@@ -6,9 +6,10 @@
  * Einträge + Live-Prüfung), DKIM-Schlüsselerzeugung, System-Seite
  * (Dienststatus der Mail-Engines), Audit-Log-Ansicht (domänen-gescoped für
  * domain_admin), Spam-/Virenschutz-Einstellungen, Selbstbedienungs-
- * Passwortänderung. Weiterhin offen: Quotas-Übersicht, Zustellfehler-
- * Auswertung, Backup-/Update-Status — benötigen weitere Backend-Endpunkte.
- * Siehe CHANGELOG.md für den genauen Stand.
+ * Passwortänderung, 2FA, Sitzungsverwaltung, API-Keys, Fail2Ban, Backup,
+ * CSV-Import/Export, RBL-Monitoring, domänenübergreifende Übersicht.
+ * Weiterhin offen: Zustellfehler-Auswertung. Siehe CHANGELOG.md für den
+ * genauen Stand.
  */
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './AuthContext'
@@ -16,6 +17,7 @@ import RequireAuth from './pages/RequireAuth'
 import Layout from './pages/Layout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
+import Overview from './pages/Overview'
 import Domains from './pages/Domains'
 import DomainDetail from './pages/DomainDetail'
 import System from './pages/System'
@@ -36,6 +38,7 @@ function App() {
           <Route element={<RequireAuth />}>
             <Route element={<Layout />}>
               <Route path="/" element={<Dashboard />} />
+              <Route path="/overview" element={<Overview />} />
               <Route path="/domains" element={<Domains />} />
               <Route path="/domains/:domainId" element={<DomainDetail />} />
               <Route path="/spam-settings" element={<SpamSettings />} />

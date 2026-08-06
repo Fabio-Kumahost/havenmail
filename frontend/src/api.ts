@@ -123,6 +123,15 @@ export interface Domain {
   created_at: string
 }
 
+export interface DomainOverviewEntry {
+  id: string
+  name: string
+  is_active: boolean
+  user_count: number
+  quota_bytes: number | null
+  storage_bytes: number | null
+}
+
 export interface User {
   id: string
   domain_id: string
@@ -334,6 +343,7 @@ export const api = {
     update: (id: string, patch: Partial<Domain>) =>
       request<Domain>('PATCH', `/api/v1/domains/${id}`, patch),
     delete: (id: string) => request<void>('DELETE', `/api/v1/domains/${id}`),
+    overview: () => request<DomainOverviewEntry[]>('GET', '/api/v1/domains/overview'),
   },
   users: {
     list: (domainId: string) => request<User[]>('GET', `/api/v1/domains/${domainId}/users`),

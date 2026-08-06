@@ -30,6 +30,7 @@ pub fn router() -> Router<AppState> {
             "/api/v1/domains",
             post(domains::create_domain).get(domains::list_domains),
         )
+        .route("/api/v1/domains/overview", get(domains::domains_overview))
         .route(
             "/api/v1/domains/:domain_id",
             get(domains::get_domain)

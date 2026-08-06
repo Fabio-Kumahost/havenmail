@@ -176,24 +176,19 @@ mod tests {
         assert_eq!(interpret_response(None), Some(false));
     }
 
-    #[tokio::test]
-    async fn spamhaus_error_code_is_correctly_seen_as_unable_to_check() {
-        // Regressionstest für zwei echte, nacheinander gefundene Bugs:
-        // 1. `lookup_ip` (Dual-Stack A+AAAA) verdeckte Spamhaus' echte
-        //    A-Antwort, weil die parallele AAAA-Teilabfrage (RBLs haben
-        //    nie AAAA-Records) NXDOMAIN lieferte und die Gesamtantwort
-        //    dadurch als Err galt — behoben durch `ipv4_lookup`.
-        // 2. `ResolverConfig::default()` nutzt fest einprogrammiertes
-        //    Google-Public-DNS (8.8.8.8) statt /etc/resolv.conf — Spamhaus
-        //    blockt DNSBL-Abfragen über bekannte öffentliche Resolver
-        //    praktisch vollständig, `dig` (nutzt den lokalen Resolver)
-        //    bekam vom selben Host aus die ganze Zeit eine echte Antwort.
-        //    Behoben durch `tokio_from_system_conf()`.
-        // Beide zusammen sorgten dafür, dass jede Spamhaus-Abfrage
-        // fälschlich "nicht gelistet" statt "nicht prüfbar" meldete.
-        let result = check_zone(Ipv4Addr::new(94, 249, 138, 253), "zen.spamhaus.org").await;
-        assert_eq!(result.listed, None, "{result:?}");
-    }
+    // KEIN Live-Test gegen echtes Spamhaus hier (bewusst): auf dem
+    // Produktivserver liefert Spamhaus für die eigene IP nachweislich den
+    // Fehlercode 127.255.255.254 (Anti-Missbrauchs-Blockade öffentlicher/
+    // Cloud-Resolver, siehe Kommentar an `check_zone`), auf dem
+    // GitHub-Actions-CI-Runner dagegen ein reguläres NXDOMAIN für dieselbe
+    // IP — welche der beiden Antworten man bekommt, hängt vom Netzwerk-
+    // Standort des Test-Runners ab, nicht vom Code. Ein Test, der das eine
+    // konkrete Live-Verhalten fest erwartet, ist deshalb zwangsläufig
+    // umgebungsabhängig flaky (real als CI-Fehlschlag aufgetreten, obwohl
+    // der Code korrekt war). Die eigentliche Regressionsabsicherung -
+    // "127.255.255.254 zählt nicht als Listung" - deckt die reine,
+    // netzwerkfreie `interpret_response`-Testgruppe oben bereits
+    // vollständig und deterministisch ab.
 
     #[tokio::test]
     async fn known_clean_ip_is_not_listed_on_a_real_rbl() {

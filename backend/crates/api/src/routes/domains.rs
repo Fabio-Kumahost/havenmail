@@ -224,3 +224,78 @@ pub async fn delete_domain(
 
     Ok(Json(serde_json::json!({ "status": "deleted" })))
 }
+
+/// Aggregierte Domain-Übersicht fürs Reseller-/Mandanten-Dashboard: alle
+/// Domains nebeneinander mit Nutzeranzahl und realer Speichernutzung.
+/// Ein eigener Endpunkt statt `list_domains` + N Einzelabfragen im
+/// Frontend — sowohl die Nutzerzahl (eine gruppierte SQL-Abfrage statt
+/// N) als auch `du -sb` je Domain-Verzeichnis (statt je Postfach, wie
+/// `get_users_storage` es für eine einzelne Domain tut) sind hier auf
+/// Domain-Ebene zusammengefasst, damit die Übersicht auch bei vielen
+/// Domains/Postfächern nicht unnötig viele einzelne Aufrufe braucht.
+#[derive(Debug, Serialize)]
+pub struct DomainOverviewEntry {
+    pub id: Uuid,
+    pub name: String,
+    pub is_active: bool,
+    pub user_count: i64,
+    /// Konfiguriertes Domain-weites Limit (falls gesetzt) — aktuell nur
+    /// zur Anzeige/Orientierung, keine technische Durchsetzung (im
+    /// Gegensatz zu users.quota_bytes je Postfach, siehe
+    /// config/dovecot/90-quota.conf.tera).
+    pub quota_bytes: Option<i64>,
+    /// `None`, wenn das Domain-Verzeichnis noch nicht existiert (keine
+    /// einzige Mailbox hatte je ein IMAP-Login) oder `du` fehlschlug.
+    pub storage_bytes: Option<i64>,
+}
+
+#[derive(Debug, FromRow)]
+struct DomainOverviewRow {
+    id: Uuid,
+    name: String,
+    is_active: bool,
+    quota_bytes: Option<i64>,
+    user_count: i64,
+}
+
+pub async fn domains_overview(
+    State(state): State<AppState>,
+    AuthUser(actor): AuthUser,
+) -> ApiResult<Json<Vec<DomainOverviewEntry>>> {
+    // Nur super_admin — eine domänenübergreifende Übersicht ist per
+    // Definition kein Ausschnitt, den ein domain_admin sehen darf.
+    if !actor.can(Action::ManageSystemSettings, None) {
+        return Err(ApiError::Forbidden);
+    }
+
+    let rows: Vec<DomainOverviewRow> = sqlx::query_as(
+        r#"
+        SELECT d.id, d.name, d.is_active, d.quota_bytes, COUNT(u.id) as user_count
+        FROM domains d
+        LEFT JOIN users u ON u.domain_id = d.id
+        GROUP BY d.id
+        ORDER BY d.name
+        "#,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let mail_base =
+        std::env::var("HAVENMAIL_MAIL_DIR").unwrap_or_else(|_| "/var/mail/havenmail".to_string());
+
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        let path = std::path::Path::new(&mail_base).join(&row.name);
+        let storage_bytes = havenmail_core::mailbox_storage::usage_bytes(&path).await;
+        out.push(DomainOverviewEntry {
+            id: row.id,
+            name: row.name,
+            is_active: row.is_active,
+            user_count: row.user_count,
+            quota_bytes: row.quota_bytes,
+            storage_bytes,
+        });
+    }
+
+    Ok(Json(out))
+}

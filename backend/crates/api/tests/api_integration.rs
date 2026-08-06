@@ -1008,3 +1008,78 @@ async fn csv_import_creates_valid_rows_and_reports_errors_for_bad_rows() {
     assert!(!export_text.contains("alice-secret-pw123"));
     assert!(!export_text.contains("bob-secret-pw123"));
 }
+
+#[tokio::test]
+async fn domains_overview_aggregates_user_counts_and_is_super_admin_only() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (super_email, super_password) = bootstrap_super_admin(&db).await;
+    let super_token = login(&app, &super_email, &super_password).await;
+
+    let domain_name = format!("overview-{}.test", Uuid::new_v4());
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": domain_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let domain_id = body["id"].as_str().unwrap().to_string();
+
+    for local_part in ["alice", "bob"] {
+        let (status, _) = call(
+            &app,
+            "POST",
+            &format!("/api/v1/domains/{domain_id}/users"),
+            Some(&super_token),
+            Some(json!({ "local_part": local_part, "password": "at-least-12-characters" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    // /overview darf nicht als :domain_id-Route mit domain_id="overview"
+    // fehlinterpretiert werden (Routenkonflikt-Regression).
+    let (status, overview) = call(
+        &app,
+        "GET",
+        "/api/v1/domains/overview",
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{overview:?}");
+    let entries = overview.as_array().expect("overview ist ein Array");
+    let entry = entries
+        .iter()
+        .find(|e| e["id"] == domain_id)
+        .expect("neue Domain fehlt in der Übersicht");
+    assert_eq!(entry["user_count"], json!(2), "{entry:?}");
+    assert_eq!(entry["is_active"], json!(true));
+
+    // domain_admin darf die domänenübergreifende Übersicht nicht sehen.
+    let admin_password = "domain-admin-secret-pw!!";
+    let (status, _) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_id}/users"),
+        Some(&super_token),
+        Some(json!({ "local_part": "admin", "password": admin_password, "role": "domain_admin" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let admin_token = login(&app, &format!("admin@{domain_name}"), admin_password).await;
+    let (status, _) = call(
+        &app,
+        "GET",
+        "/api/v1/domains/overview",
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
