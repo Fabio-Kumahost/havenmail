@@ -941,3 +941,70 @@ async fn api_token_authenticates_requests_and_can_be_revoked() {
     let (status, _) = call(&app, "GET", "/api/v1/system/status", Some(&api_token), None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
+
+#[tokio::test]
+async fn csv_import_creates_valid_rows_and_reports_errors_for_bad_rows() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (super_email, super_password) = bootstrap_super_admin(&db).await;
+    let super_token = login(&app, &super_email, &super_password).await;
+
+    let domain_name = format!("csv-{}.test", Uuid::new_v4());
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": domain_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let domain_id = body["id"].as_str().unwrap().to_string();
+
+    let csv = "local_part,password,role,quota_bytes\n\
+               alice,alice-secret-pw123,user,\n\
+               bob,bob-secret-pw123,domain_admin,104857600\n\
+               tooshort,short,user,\n\
+               alice,alice-secret-pw123,user,\n"; // Duplikat von Zeile 1
+
+    let (status, import_body) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_id}/users/import"),
+        Some(&super_token),
+        Some(json!({ "csv": csv })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{import_body:?}");
+    let created = import_body["created"].as_array().unwrap();
+    let errors = import_body["errors"].as_array().unwrap();
+    assert_eq!(created.len(), 2, "{import_body:?}");
+    assert_eq!(errors.len(), 2, "{import_body:?}");
+    assert!(errors
+        .iter()
+        .any(|e| e["local_part"] == "tooshort" && e["message"].as_str().unwrap().contains("12")));
+    assert!(errors
+        .iter()
+        .any(|e| e["local_part"] == "alice" && e["message"].as_str().unwrap().contains("bereits")));
+
+    // Export enthält beide erfolgreich angelegten Zeilen, aber nie ein
+    // Passwort/Passwort-Hash. Antwort ist rohes CSV, kein JSON — call()s
+    // JSON-Parsing würde hier nur Value::Null liefern, also die Response
+    // direkt lesen statt über call().
+    let request = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/domains/{domain_id}/users/export"))
+        .header("authorization", format!("Bearer {super_token}"))
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let export_text = String::from_utf8(bytes.to_vec()).unwrap();
+    assert!(export_text.contains("alice"));
+    assert!(export_text.contains("bob"));
+    assert!(!export_text.contains("alice-secret-pw123"));
+    assert!(!export_text.contains("bob-secret-pw123"));
+}

@@ -19,6 +19,7 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
 sha2 = "0.10"
 async-trait = "0.1"
+csv = "1"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

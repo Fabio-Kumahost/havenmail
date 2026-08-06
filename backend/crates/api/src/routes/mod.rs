@@ -45,6 +45,14 @@ pub fn router() -> Router<AppState> {
             get(users::get_users_storage),
         )
         .route(
+            "/api/v1/domains/:domain_id/users/import",
+            post(users::import_users),
+        )
+        .route(
+            "/api/v1/domains/:domain_id/users/export",
+            get(users::export_users),
+        )
+        .route(
             "/api/v1/users/:user_id",
             get(users::get_user)
                 .patch(users::update_user)

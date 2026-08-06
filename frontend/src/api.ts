@@ -93,6 +93,21 @@ async function tryRefresh(): Promise<boolean> {
   }
 }
 
+/**
+ * CSV-Export ist keine JSON-Antwort — request<T>() (JSON-Parsing) passt
+ * hier nicht, daher ein eigener Fetch mit demselben Bearer-Header.
+ */
+async function fetchExportCsv(domainId: string): Promise<string> {
+  const res = await fetch(`${API_BASE}/api/v1/domains/${domainId}/users/export`, {
+    headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {},
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new ApiError(res.status, body?.error ?? `HTTP ${res.status}`)
+  }
+  return res.text()
+}
+
 export interface TokenResponse {
   access_token: string
   refresh_token: string
@@ -121,6 +136,17 @@ export interface User {
 export interface UserStorage {
   id: string
   bytes: number | null
+}
+
+export interface ImportRowError {
+  row: number
+  local_part: string
+  message: string
+}
+
+export interface ImportResponse {
+  created: User[]
+  errors: ImportRowError[]
 }
 
 export interface Alias {
@@ -310,6 +336,9 @@ export const api = {
     delete: (id: string) => request<void>('DELETE', `/api/v1/users/${id}`),
     storage: (domainId: string) =>
       request<UserStorage[]>('GET', `/api/v1/domains/${domainId}/users/storage`),
+    import: (domainId: string, csv: string) =>
+      request<ImportResponse>('POST', `/api/v1/domains/${domainId}/users/import`, { csv }),
+    exportCsv: (domainId: string) => fetchExportCsv(domainId),
   },
   aliases: {
     list: (domainId: string) => request<Alias[]>('GET', `/api/v1/domains/${domainId}/aliases`),

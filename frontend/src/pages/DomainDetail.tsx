@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import {
   api,
@@ -7,6 +7,7 @@ import {
   type Alias,
   type DnsRecommendations,
   type DnsCheckResult,
+  type ImportResponse,
   ApiError,
 } from '../api'
 
@@ -90,6 +91,7 @@ export default function DomainDetail() {
             )}
           </tbody>
         </table>
+        <CsvImportExport domainId={domainId} domainName={domain?.name} onImported={reload} onError={setError} />
       </section>
 
       <section className="card">
@@ -263,6 +265,106 @@ function UserForm({
       />
       <button type="submit">Benutzer anlegen</button>
     </form>
+  )
+}
+
+function CsvImportExport({
+  domainId,
+  domainName,
+  onImported,
+  onError,
+}: {
+  domainId: string
+  domainName: string | undefined
+  onImported: () => void
+  onError: (msg: string) => void
+}) {
+  const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const [result, setResult] = useState<ImportResponse | null>(null)
+
+  async function onFileSelected(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // erlaubt erneuten Import derselben Datei
+    if (!file) return
+    setImporting(true)
+    setResult(null)
+    try {
+      const csv = await file.text()
+      const response = await api.users.import(domainId, csv)
+      setResult(response)
+      if (response.created.length > 0) onImported()
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : 'Import fehlgeschlagen')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  async function onExport() {
+    setExporting(true)
+    try {
+      const csv = await api.users.exportCsv(domainId)
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `postfaecher-${domainName ?? domainId}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : 'Export fehlgeschlagen')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  return (
+    <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border)' }}>
+      <h3 style={{ marginTop: 0 }}>CSV-Import/-Export</h3>
+      <p className="muted">
+        Import erwartet Kopfzeile <code>local_part,password,role,quota_bytes</code> (role/quota_bytes
+        optional). Fehlerhafte Zeilen werden übersprungen, der Rest wird trotzdem angelegt.
+      </p>
+      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <label className="inline-form" style={{ display: 'inline-flex' }}>
+          <input type="file" accept=".csv,text/csv" onChange={onFileSelected} disabled={importing} />
+        </label>
+        <button onClick={onExport} disabled={exporting}>
+          {exporting ? 'Exportiere…' : 'Als CSV exportieren'}
+        </button>
+      </div>
+      {result && (
+        <div style={{ marginTop: '0.75rem' }}>
+          <p>
+            <span className="badge badge-ready">{result.created.length} angelegt</span>{' '}
+            {result.errors.length > 0 && (
+              <span className="badge badge-not_ready">{result.errors.length} übersprungen</span>
+            )}
+          </p>
+          {result.errors.length > 0 && (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Zeile</th>
+                  <th>local_part</th>
+                  <th>Fehler</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.errors.map((e, i) => (
+                  <tr key={i}>
+                    <td>{e.row}</td>
+                    <td>{e.local_part || '—'}</td>
+                    <td>{e.message}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 

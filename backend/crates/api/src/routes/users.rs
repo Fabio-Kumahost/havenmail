@@ -382,3 +382,253 @@ pub async fn delete_user(
 
     Ok(Json(serde_json::json!({ "status": "deleted" })))
 }
+
+/// Eine Zeile aus der Import-CSV. `role`/`quota_bytes` optional (leer =
+/// Default "user"/kein Limit) — dieselbe Semantik wie `CreateUserRequest`.
+#[derive(Debug, Deserialize)]
+struct ImportRow {
+    local_part: String,
+    password: String,
+    #[serde(default)]
+    role: String,
+    #[serde(default)]
+    quota_bytes: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ImportRowError {
+    /// 1-basiert, zählt die Kopfzeile nicht mit (Zeile 1 der Daten = 1,
+    /// nicht 2) — passt zur Zeilennummer, die ein Nutzer beim Öffnen der
+    /// CSV in einem Editor/Tabellenkalkulation sieht, wenn man die
+    /// Kopfzeile mitzählt und 1-basiert bleibt.
+    pub row: usize,
+    pub local_part: String,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ImportResponse {
+    pub created: Vec<User>,
+    pub errors: Vec<ImportRowError>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImportRequest {
+    /// Rohtext der CSV-Datei, Kopfzeile erwartet:
+    /// local_part,password,role,quota_bytes (role/quota_bytes optional,
+    /// leer lassen für Default).
+    pub csv: String,
+}
+
+/// Importiert Postfächer aus CSV — Zeile für Zeile, nicht alles-oder-
+/// nichts: eine fehlerhafte Zeile (z. B. Adresse existiert schon, zu
+/// kurzes Passwort) überspringt nur diese und macht mit der nächsten
+/// weiter, damit ein einzelner Tippfehler nicht den ganzen Import einer
+/// großen Domain verhindert. Nutzt dieselbe Validierung wie `create_user`
+/// (Passwortlänge, Rollen-Rechteausweitungsschutz), aber inline statt als
+/// gemeinsame Funktion — der Unterschied "ein ApiError abbricht" vs. "ein
+/// Fehler wird gesammelt und weitergemacht" hätte die Extraktion selbst
+/// komplizierter gemacht als die kleine Duplizierung.
+pub async fn import_users(
+    State(state): State<AppState>,
+    AuthUser(actor): AuthUser,
+    Path(domain_id): Path<Uuid>,
+    headers: HeaderMap,
+    Json(req): Json<ImportRequest>,
+) -> ApiResult<Json<ImportResponse>> {
+    if !actor.can(Action::ManageDomainUsers, Some(domain_id)) {
+        return Err(ApiError::Forbidden);
+    }
+
+    let mut reader = csv::ReaderBuilder::new()
+        .trim(csv::Trim::All)
+        .from_reader(req.csv.as_bytes());
+
+    let mut created = Vec::new();
+    let mut errors = Vec::new();
+
+    for (idx, result) in reader.deserialize::<ImportRow>().enumerate() {
+        let row_num = idx + 1;
+        let row = match result {
+            Ok(r) => r,
+            Err(e) => {
+                errors.push(ImportRowError {
+                    row: row_num,
+                    local_part: String::new(),
+                    message: format!("Zeile konnte nicht gelesen werden: {e}"),
+                });
+                continue;
+            }
+        };
+
+        let local_part = row.local_part.trim().to_lowercase();
+        if local_part.is_empty() || row.password.len() < 12 {
+            errors.push(ImportRowError {
+                row: row_num,
+                local_part,
+                message: "local_part erforderlich, Passwort muss mindestens 12 Zeichen haben"
+                    .to_string(),
+            });
+            continue;
+        }
+
+        let requested_role = if row.role.trim().is_empty() {
+            "user"
+        } else {
+            row.role.trim()
+        };
+        if requested_role == "super_admin" && actor.role != Role::SuperAdmin {
+            errors.push(ImportRowError {
+                row: row_num,
+                local_part,
+                message: "keine Berechtigung, super_admin-Konten anzulegen".to_string(),
+            });
+            continue;
+        }
+        if !["super_admin", "domain_admin", "user"].contains(&requested_role) {
+            errors.push(ImportRowError {
+                row: row_num,
+                local_part,
+                message: "ungültige Rolle".to_string(),
+            });
+            continue;
+        }
+
+        let quota_bytes: Option<i64> = if row.quota_bytes.trim().is_empty() {
+            None
+        } else {
+            match row.quota_bytes.trim().parse() {
+                Ok(v) => Some(v),
+                Err(_) => {
+                    errors.push(ImportRowError {
+                        row: row_num,
+                        local_part,
+                        message: "quota_bytes muss eine Zahl sein".to_string(),
+                    });
+                    continue;
+                }
+            }
+        };
+
+        let password_hash = match password::hash_password(&row.password) {
+            Ok(h) => h,
+            Err(e) => {
+                errors.push(ImportRowError {
+                    row: row_num,
+                    local_part,
+                    message: format!("Passwort-Hashing fehlgeschlagen: {e}"),
+                });
+                continue;
+            }
+        };
+
+        let insert_result: Result<User, sqlx::Error> = sqlx::query_as(
+            r#"
+            INSERT INTO users (domain_id, local_part, password_hash, role, quota_bytes)
+            VALUES ($1, $2, $3, $4::havenmail_user_role, $5)
+            RETURNING id, domain_id, local_part, role::text as role, quota_bytes, is_active, created_at
+            "#,
+        )
+        .bind(domain_id)
+        .bind(&local_part)
+        .bind(&password_hash)
+        .bind(requested_role)
+        .bind(quota_bytes)
+        .fetch_one(&state.db)
+        .await;
+
+        match insert_result {
+            Ok(user) => created.push(user),
+            Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => {
+                errors.push(ImportRowError {
+                    row: row_num,
+                    local_part,
+                    message: "Postfach existiert bereits".to_string(),
+                });
+            }
+            Err(e) => {
+                errors.push(ImportRowError {
+                    row: row_num,
+                    local_part,
+                    message: format!("Datenbankfehler: {e}"),
+                });
+            }
+        }
+    }
+
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "user.bulk_import",
+        &domain_id.to_string(),
+        Some(domain_id),
+        None,
+        Some(serde_json::json!({ "created": created.len(), "errors": errors.len() })),
+    )
+    .await;
+
+    Ok(Json(ImportResponse { created, errors }))
+}
+
+/// Exportiert alle Postfächer einer Domain als CSV — niemals
+/// password_hash oder sonst etwas Geheimes, nur was auch `list_users`
+/// zeigt. `role`/`quota_bytes` im selben Format wie der Import erwartet,
+/// damit Export→Bearbeiten→Import derselben Domain (oder einer neuen)
+/// funktioniert (Passwort-Spalte bleibt beim Export leer, da der Hash
+/// nicht rückgängig gemacht werden kann — ein reiner Export ist also kein
+/// vollständiges Backup der Zugangsdaten, nur der Struktur).
+pub async fn export_users(
+    State(state): State<AppState>,
+    AuthUser(actor): AuthUser,
+    Path(domain_id): Path<Uuid>,
+) -> ApiResult<axum::response::Response> {
+    use axum::http::header;
+    use axum::response::IntoResponse;
+
+    if !actor.can(Action::ManageDomainUsers, Some(domain_id)) {
+        return Err(ApiError::Forbidden);
+    }
+
+    let users: Vec<User> = sqlx::query_as(
+        "SELECT id, domain_id, local_part, role::text as role, quota_bytes, is_active, created_at FROM users WHERE domain_id = $1 ORDER BY local_part",
+    )
+    .bind(domain_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    // Reines In-Memory-Schreiben (Vec<u8>, kein I/O) — schlägt praktisch
+    // nie fehl, ein erzwungener Umweg über einen der bestehenden
+    // ApiError-Varianten (alle für DB-/Token-Fehler gedacht) wäre hier
+    // irreführender als ein `expect`.
+    let mut writer = csv::WriterBuilder::new().from_writer(vec![]);
+    writer
+        .write_record(["local_part", "password", "role", "quota_bytes", "is_active"])
+        .expect("CSV-Schreiben in einen Vec<u8> kann nicht fehlschlagen");
+    for user in &users {
+        writer
+            .write_record([
+                user.local_part.as_str(),
+                "",
+                user.role.as_str(),
+                &user.quota_bytes.map(|q| q.to_string()).unwrap_or_default(),
+                &user.is_active.to_string(),
+            ])
+            .expect("CSV-Schreiben in einen Vec<u8> kann nicht fehlschlagen");
+    }
+    let body = writer
+        .into_inner()
+        .expect("CSV-Schreiben in einen Vec<u8> kann nicht fehlschlagen");
+
+    Ok((
+        [
+            (header::CONTENT_TYPE, "text/csv; charset=utf-8"),
+            (
+                header::CONTENT_DISPOSITION,
+                "attachment; filename=\"postfaecher.csv\"",
+            ),
+        ],
+        body,
+    )
+        .into_response())
+}
