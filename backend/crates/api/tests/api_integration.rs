@@ -776,3 +776,95 @@ async fn totp_enrollment_confirm_and_login_flow() {
     assert_eq!(status, StatusCode::OK, "{body:?}");
     assert!(body["access_token"].as_str().is_some());
 }
+
+#[tokio::test]
+async fn session_list_marks_current_session_and_revoke_is_owner_scoped() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (email, password) = bootstrap_super_admin(&db).await;
+
+    // Zwei "Geräte" -> zwei Sessions für denselben Nutzer.
+    let (status, login_a) = call(
+        &app,
+        "POST",
+        "/api/v1/auth/login",
+        None,
+        Some(json!({ "email": email, "password": password })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{login_a:?}");
+    let token_a = login_a["access_token"].as_str().unwrap().to_string();
+
+    let (status, login_b) = call(
+        &app,
+        "POST",
+        "/api/v1/auth/login",
+        None,
+        Some(json!({ "email": email, "password": password })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{login_b:?}");
+
+    // Mit Token A abgefragt: zwei Sessions, genau eine davon is_current.
+    let (status, sessions) = call(
+        &app,
+        "GET",
+        "/api/v1/users/me/sessions",
+        Some(&token_a),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{sessions:?}");
+    let sessions = sessions.as_array().expect("sessions ist ein Array");
+    assert_eq!(sessions.len(), 2);
+    let current_count = sessions
+        .iter()
+        .filter(|s| s["is_current"] == json!(true))
+        .count();
+    assert_eq!(current_count, 1, "{sessions:?}");
+    let other_session_id = sessions
+        .iter()
+        .find(|s| s["is_current"] == json!(false))
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // Ein anderer Nutzer darf die Session nicht sehen/widerrufen.
+    let (other_email, other_password) = bootstrap_super_admin(&db).await;
+    let other_token = login(&app, &other_email, &other_password).await;
+    let (status, _) = call(
+        &app,
+        "DELETE",
+        &format!("/api/v1/users/me/sessions/{other_session_id}"),
+        Some(&other_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Der Eigentümer darf die andere eigene Session widerrufen.
+    let (status, revoke_body) = call(
+        &app,
+        "DELETE",
+        &format!("/api/v1/users/me/sessions/{other_session_id}"),
+        Some(&token_a),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{revoke_body:?}");
+    assert_eq!(revoke_body["was_current"], json!(false));
+
+    // Danach nur noch eine (nicht widerrufene) Session sichtbar.
+    let (_, sessions) = call(
+        &app,
+        "GET",
+        "/api/v1/users/me/sessions",
+        Some(&token_a),
+        None,
+    )
+    .await;
+    assert_eq!(sessions.as_array().unwrap().len(), 1);
+}

@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import QRCode from 'qrcode'
-import { api, ApiError } from '../api'
+import { api, ApiError, type SessionEntry } from '../api'
+import { useAuth } from '../AuthContext'
 
 export default function Account() {
   return (
@@ -8,6 +10,7 @@ export default function Account() {
       <h1>Mein Konto</h1>
       <PasswordSection />
       <TotpSection />
+      <SessionsSection />
     </div>
   )
 }
@@ -276,6 +279,98 @@ function TotpSection() {
             </button>
           </div>
         </form>
+      )}
+    </div>
+  )
+}
+
+function SessionsSection() {
+  const { logout } = useAuth()
+  const navigate = useNavigate()
+  const [sessions, setSessions] = useState<SessionEntry[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [revokingId, setRevokingId] = useState<string | null>(null)
+
+  function reload() {
+    api.sessions
+      .list()
+      .then(setSessions)
+      .catch(() => setError('Sitzungen konnten nicht geladen werden'))
+  }
+  useEffect(reload, [])
+
+  async function onRevoke(id: string) {
+    setRevokingId(id)
+    setError(null)
+    try {
+      const result = await api.sessions.revoke(id)
+      if (result.was_current) {
+        // Der eigene Zugriff wurde gerade widerrufen — sessionStorage
+        // lokal aufräumen und zurück zum Login, statt mit einem toten
+        // Refresh-Token weiterzumachen.
+        logout()
+        navigate('/login')
+        return
+      }
+      reload()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Abmelden fehlgeschlagen')
+    } finally {
+      setRevokingId(null)
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2>Aktive Sitzungen</h2>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      {!sessions && !error && <p className="muted">Lädt…</p>}
+      {sessions && sessions.length === 0 && <p className="muted">Keine aktiven Sitzungen.</p>}
+      {sessions && sessions.length > 0 && (
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>IP-Adresse</th>
+              <th>Gerät/Browser</th>
+              <th>Angemeldet seit</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {sessions.map((s) => (
+              <tr key={s.id}>
+                <td>
+                  <code>{s.ip ?? '—'}</code>
+                </td>
+                <td className="muted" style={{ maxWidth: '20rem', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {s.user_agent ?? '—'}
+                </td>
+                <td>
+                  {new Date(s.created_at).toLocaleString('de-DE')}
+                  {s.is_current && (
+                    <>
+                      {' '}
+                      <span className="badge badge-ready">diese Sitzung</span>
+                    </>
+                  )}
+                </td>
+                <td>
+                  <button
+                    className="btn-danger"
+                    onClick={() => onRevoke(s.id)}
+                    disabled={revokingId === s.id}
+                  >
+                    {revokingId === s.id ? 'Melde ab…' : 'Abmelden'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   )

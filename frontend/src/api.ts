@@ -250,6 +250,14 @@ export interface TotpEnrollment {
   otpauth_uri: string
 }
 
+export interface SessionEntry {
+  id: string
+  ip: string | null
+  user_agent: string | null
+  created_at: string
+  is_current: boolean
+}
+
 export interface BackupHistoryEntry {
   filename: string
   size_bytes: number
@@ -330,6 +338,14 @@ export const api = {
       request<{ status: string }>('POST', '/api/v1/users/me/totp/confirm', { secret, code }),
     disable: (password: string) =>
       request<{ status: string }>('POST', '/api/v1/users/me/totp/disable', { password }),
+  },
+  sessions: {
+    list: () => request<SessionEntry[]>('GET', '/api/v1/users/me/sessions'),
+    revoke: (id: string) =>
+      request<{ status: string; was_current: boolean }>(
+        'DELETE',
+        `/api/v1/users/me/sessions/${id}`,
+      ),
   },
   securitySettings: {
     get: () => request<SecuritySettings>('GET', '/api/v1/system/security-settings'),

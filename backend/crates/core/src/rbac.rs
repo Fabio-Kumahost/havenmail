@@ -37,6 +37,10 @@ pub struct Actor {
     /// Bei `DomainAdmin`/`User`: die Domain, auf die der Actor beschränkt ist.
     /// Bei `SuperAdmin`: `None` (kein Scope-Limit).
     pub domain_id: Option<Uuid>,
+    /// Die `sessions`-Zeile, die diesen Access-Token ausgestellt hat (siehe
+    /// `auth::jwt::Claims::session_id`) — erlaubt der Sitzungsverwaltung,
+    /// die aktuell genutzte Sitzung zu markieren.
+    pub session_id: Uuid,
 }
 
 impl Actor {
@@ -84,6 +88,7 @@ mod tests {
             user_id: uuid(1),
             role: Role::SuperAdmin,
             domain_id: None,
+            session_id: uuid(9),
         };
         assert!(actor.can(Action::ManageSystemSettings, None));
         assert!(actor.can(Action::ManageDomain, Some(uuid(2))));
@@ -97,6 +102,7 @@ mod tests {
             user_id: uuid(1),
             role: Role::DomainAdmin,
             domain_id: Some(own_domain),
+            session_id: uuid(9),
         };
 
         assert!(actor.can(Action::ManageDomain, Some(own_domain)));
@@ -111,6 +117,7 @@ mod tests {
             user_id: uuid(1),
             role: Role::DomainAdmin,
             domain_id: None,
+            session_id: uuid(9),
         };
         assert!(!actor.can(Action::ManageDomain, Some(uuid(2))));
     }
@@ -121,6 +128,7 @@ mod tests {
             user_id: uuid(1),
             role: Role::User,
             domain_id: Some(uuid(2)),
+            session_id: uuid(9),
         };
         assert!(actor.can(Action::ManageOwnAccount, None));
         assert!(!actor.can(Action::ManageDomain, Some(uuid(2))));
@@ -133,6 +141,7 @@ mod tests {
             user_id: uuid(1),
             role: Role::User,
             domain_id: Some(uuid(2)),
+            session_id: uuid(9),
         };
         assert!(actor.owns(uuid(1)));
         assert!(!actor.owns(uuid(9)));

@@ -42,6 +42,7 @@ impl FromRequestParts<AppState> for AuthUser {
             user_id: claims.sub,
             role: claims.role,
             domain_id: claims.domain_id,
+            session_id: claims.session_id,
         }))
     }
 }

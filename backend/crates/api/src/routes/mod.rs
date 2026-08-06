@@ -9,6 +9,7 @@ pub mod fail2ban;
 pub mod forwards;
 pub mod mail_queue;
 pub mod security_settings;
+pub mod sessions;
 pub mod system;
 pub mod totp;
 pub mod users;
@@ -56,6 +57,11 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/users/me/totp/enroll", post(totp::enroll))
         .route("/api/v1/users/me/totp/confirm", post(totp::confirm))
         .route("/api/v1/users/me/totp/disable", post(totp::disable))
+        .route("/api/v1/users/me/sessions", get(sessions::list_sessions))
+        .route(
+            "/api/v1/users/me/sessions/:session_id",
+            delete(sessions::revoke_session),
+        )
         .route(
             "/api/v1/domains/:domain_id/aliases",
             post(aliases::create_alias).get(aliases::list_aliases),

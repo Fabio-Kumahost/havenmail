@@ -23,6 +23,12 @@ pub struct Claims {
     pub role: Role,
     /// Domain-Scope für domain_admin/user; None = kein Scope-Limit (super_admin)
     pub domain_id: Option<Uuid>,
+    /// Verknüpfung zur `sessions`-Zeile, die bei der Anmeldung/beim Refresh
+    /// zusammen mit diesem Access-Token entstanden ist — erlaubt der
+    /// Sitzungsverwaltung (`routes/sessions.rs`), die gerade genutzte
+    /// Sitzung als "diese hier" zu markieren, ohne den Refresh-Token selbst
+    /// preiszugeben.
+    pub session_id: Uuid,
     /// Issued-at (Unix-Sekunden)
     pub iat: i64,
     /// Expiry (Unix-Sekunden)
@@ -57,12 +63,14 @@ impl JwtIssuer {
         user_id: Uuid,
         role: Role,
         domain_id: Option<Uuid>,
+        session_id: Uuid,
         now_unix: i64,
     ) -> Result<String, JwtError> {
         let claims = Claims {
             sub: user_id,
             role,
             domain_id,
+            session_id,
             iat: now_unix,
             exp: now_unix + ACCESS_TOKEN_TTL_SECONDS,
         };
@@ -102,7 +110,7 @@ mod tests {
         // unabhängig vom übergebenen `iat` — daher hier reales "jetzt" statt
         // eines fixen Testzeitstempels.
         let token = issuer
-            .issue(user_id, Role::DomainAdmin, None, now_unix())
+            .issue(user_id, Role::DomainAdmin, None, Uuid::new_v4(), now_unix())
             .unwrap();
         let claims = issuer.verify(&token).unwrap();
         assert_eq!(claims.sub, user_id);
@@ -115,7 +123,13 @@ mod tests {
         let issuer = issuer();
         // iat weit in der Vergangenheit -> exp ebenfalls abgelaufen
         let token = issuer
-            .issue(Uuid::new_v4(), Role::User, None, 1_000_000_000)
+            .issue(
+                Uuid::new_v4(),
+                Role::User,
+                None,
+                Uuid::new_v4(),
+                1_000_000_000,
+            )
             .unwrap();
         assert!(issuer.verify(&token).is_err());
     }
@@ -125,7 +139,13 @@ mod tests {
         let issuer_a = JwtIssuer::new(b"key-a-key-a-key-a-key-a-key-a-32");
         let issuer_b = JwtIssuer::new(b"key-b-key-b-key-b-key-b-key-b-32");
         let token = issuer_a
-            .issue(Uuid::new_v4(), Role::SuperAdmin, None, 1_700_000_000)
+            .issue(
+                Uuid::new_v4(),
+                Role::SuperAdmin,
+                None,
+                Uuid::new_v4(),
+                1_700_000_000,
+            )
             .unwrap();
         assert!(issuer_b.verify(&token).is_err());
     }

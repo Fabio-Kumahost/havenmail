@@ -5,7 +5,11 @@ use crate::auth_extractor::AuthUser;
 use crate::client_ip;
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
-use axum::{extract::State, http::HeaderMap, Json};
+use axum::{
+    extract::State,
+    http::{header, HeaderMap},
+    Json,
+};
 use havenmail_core::auth::{jwt::ACCESS_TOKEN_TTL_SECONDS, password, token, totp};
 use havenmail_core::rbac::Role;
 use havenmail_core::secrets_crypto;
@@ -123,7 +127,15 @@ pub async fn login(
     }
 
     let role = parse_role(&role);
-    let tokens = issue_token_pair(&state, user_id, role, domain_id).await?;
+    let tokens = issue_token_pair(
+        &state,
+        user_id,
+        role,
+        domain_id,
+        Some(&ip.to_string()),
+        user_agent(&headers),
+    )
+    .await?;
     Ok(Json(
         serde_json::to_value(tokens.0).expect("TokenResponse ist immer serialisierbar"),
     ))
@@ -143,6 +155,7 @@ struct SessionRow {
 
 pub async fn refresh(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<RefreshRequest>,
 ) -> ApiResult<Json<TokenResponse>> {
     let hash = token::hash_token(&req.refresh_token);
@@ -191,7 +204,16 @@ pub async fn refresh(
     // docs/architecture.md, Sicherheitsmodell: "Refresh-Tokens rotierend").
     revoke_session(&state.db, session.id).await?;
 
-    issue_token_pair(&state, user.id, parse_role(&user.role), user.domain_id).await
+    let ip = client_ip::extract(&headers);
+    issue_token_pair(
+        &state,
+        user.id,
+        parse_role(&user.role),
+        user.domain_id,
+        Some(&ip.to_string()),
+        user_agent(&headers),
+    )
+    .await
 }
 
 pub async fn logout(
@@ -232,6 +254,8 @@ async fn issue_token_pair(
     user_id: Uuid,
     role: Role,
     domain_id: Uuid,
+    ip: Option<&str>,
+    user_agent: Option<&str>,
 ) -> ApiResult<Json<TokenResponse>> {
     let now = chrono::Utc::now().timestamp();
     let domain_scope = if role == Role::SuperAdmin {
@@ -240,17 +264,29 @@ async fn issue_token_pair(
         Some(domain_id)
     };
 
+    // Session-Zeile zuerst anlegen (statt danach): das Access-Token trägt
+    // ihre id als session_id-Claim, damit die Sitzungsverwaltung
+    // (routes/sessions.rs) die gerade genutzte Sitzung markieren kann —
+    // dafür muss die id schon feststehen, bevor der JWT signiert wird.
+    let (refresh_plaintext, refresh_hash) = token::generate_opaque_token();
+    let session_id: Uuid = sqlx::query_scalar(
+        r#"
+        INSERT INTO sessions (user_id, refresh_token_hash, ip, user_agent)
+        VALUES ($1, $2, $3::inet, $4)
+        RETURNING id
+        "#,
+    )
+    .bind(user_id)
+    .bind(&refresh_hash)
+    .bind(ip)
+    .bind(user_agent)
+    .fetch_one(&state.db)
+    .await?;
+
     let access_token = state
         .jwt
-        .issue(user_id, role, domain_scope, now)
+        .issue(user_id, role, domain_scope, session_id, now)
         .map_err(|e| ApiError::TokenIssue(e.to_string()))?;
-
-    let (refresh_plaintext, refresh_hash) = token::generate_opaque_token();
-    sqlx::query("INSERT INTO sessions (user_id, refresh_token_hash) VALUES ($1, $2)")
-        .bind(user_id)
-        .bind(&refresh_hash)
-        .execute(&state.db)
-        .await?;
 
     Ok(Json(TokenResponse {
         access_token,
@@ -258,6 +294,14 @@ async fn issue_token_pair(
         token_type: "Bearer",
         expires_in: ACCESS_TOKEN_TTL_SECONDS,
     }))
+}
+
+/// Liest den `User-Agent`-Header roh aus (kein Parsing/Browser-Erkennung —
+/// nur zur Anzeige in der Sitzungsverwaltung, siehe `routes/sessions.rs`).
+fn user_agent(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
 }
 
 fn parse_role(s: &str) -> Role {
