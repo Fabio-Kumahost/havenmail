@@ -1,0 +1,42 @@
+/**
+ * Zusatzregeln speziell für embed.css — die Nachrichtenanzeige (HTML-Mails,
+ * TinyMCE-Editor-Vorschau) läuft in einem eigenen, sandboxten iframe mit
+ * eigenem Stylesheet (embed.css, kompiliert aus embed.less). Elastics
+ * eigenes dark.less deckt embed.css NICHT ab (auch im offiziellen
+ * Roundcube-Release nicht — im ausgelieferten Paket enthält embed.min.css
+ * keinerlei ".dark-mode"-Regeln, nachgeprüft per dpkg-deb -x). Da bei uns
+ * der Dark Mode dauerhaft aktiv ist (siehe
+ * templates/includes/layout.html — <html class="dark-mode"> fest verdrahtet,
+ * kein Umschalt-Knopf mehr), bliebe dieser iframe sonst dauerhaft beim
+ * hellen Browser-Standard hängen (der ursprünglich gemeldete "weiße Fleck"
+ * in der Nachrichtenansicht).
+ *
+ * Verwendet bewusst dieselben @color-dark-*-Variablen wie Elastics eigenes
+ * dark.less (nicht eigene Fantasiewerte) — sorgt für optische Konsistenz
+ * mit dem Rest der App, ohne dass wir Elastics Palette hier duplizieren
+ * müssten.
+ *
+ * Wird an das kompilierte embed.css angehängt (siehe
+ * havenmail_deploy_roundcube_skin), nicht per LESS @import eingebunden.
+ */
+
+@import (reference) "colors";
+
+html,
+body,
+.mce-content-body {
+    background-color: @color-dark-background;
+    color: @color-dark-font;
+}
+
+.mce-content-body a {
+    color: @color-dark-main;
+}
+
+.mce-content-body blockquote {
+    background-color: fade(@color-main, 8%);
+    border-left: 2px solid @color-dark-blockquote-0-border;
+    color: @color-dark-font;
+    margin: 2px 0;
+    padding: 0 0.4em;
+}

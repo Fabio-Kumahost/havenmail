@@ -3,7 +3,10 @@
 	"author": "Havenmail",
 	"extends": "elastic",
 	"license": "Creative Commons Attribution-ShareAlike",
+	"config": {
+		"dark_mode_support": false
+	},
 	"meta": {
-		"theme-color": "#A88194"
+		"theme-color": "#21292c"
 	}
 }

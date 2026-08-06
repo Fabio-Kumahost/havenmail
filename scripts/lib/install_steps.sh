@@ -650,10 +650,22 @@ havenmail_deploy_roundcube_skin() {
   # fallen für alles, was hier nicht existiert, automatisch auf Elastic
   # zurück (Roundcubes eigener load_skin()-Mechanismus).
   install -d -m 0755 "${rc_share}/skins/havenmail/images"
+  install -d -m 0755 "${rc_share}/skins/havenmail/templates/includes"
   install -m 0644 "${HAVENMAIL_REPO_DIR}/config/roundcube/skins/havenmail/meta.json" \
     "${rc_share}/skins/havenmail/meta.json"
   install -m 0644 "${HAVENMAIL_REPO_DIR}/config/roundcube/skins/havenmail/images/logo.svg" \
     "${rc_share}/skins/havenmail/images/logo.svg"
+
+  # Eigene layout.html: erzwingt "dark-mode" fest auf <html>, statt es wie
+  # Elastic per Cookie/prefers-color-scheme optional per Umschalt-Knopf zu
+  # aktivieren (siehe meta.json: dark_mode_support=false blendet diesen
+  # Knopf zusätzlich aus dem Menü aus). Auf Nutzerwunsch: Dark Mode ist der
+  # dauerhafte Standard, kein Umschalten mehr nötig oder möglich. Wird über
+  # Roundcubes load_skin()-Suchpfad (skin_paths, Kind vor Eltern) automatisch
+  # anstelle von Elastics eigener layout.html geladen, keine Codeänderung an
+  # Elastic selbst nötig.
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/roundcube/skins/havenmail/templates/includes/layout.html" \
+    "${rc_share}/skins/havenmail/templates/includes/layout.html"
 
   # Debians Roundcube-Paketierung verlinkt jeden Skin einzeln von
   # /var/lib/roundcube/skins/<name> nach /usr/share/roundcube/skins/<name>
@@ -722,10 +734,12 @@ havenmail_deploy_roundcube_skin() {
   install -m 0644 "${HAVENMAIL_REPO_DIR}/config/roundcube/skins/havenmail/_styles.less" \
     "${rc_share}/skins/elastic/styles/_styles.less"
 
-  # Überbleibsel eines früheren Dark-Mode-Deploys (_embed-extra.less, siehe
-  # unten bei embed.css) — wird nicht mehr erzeugt, eine stehengebliebene
-  # Datei aus einem älteren Lauf soll aber nicht als Quelldatei herumliegen.
-  rm -f "${rc_share}/skins/elastic/styles/_embed-extra.less"
+  # Nur zum Kompilieren dorthin kopiert (braucht denselben relativen
+  # `@import (reference) "colors"`-Pfad wie _styles.less) — wird von
+  # keinem Elastic-eigenen Hook automatisch eingebunden, bleibt als reine
+  # Quelldatei liegen (siehe Anhängen an embed.css weiter unten).
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/roundcube/skins/havenmail/_embed-extra.less" \
+    "${rc_share}/skins/elastic/styles/_embed-extra.less"
 
   local build_dir
   build_dir="$(mktemp -d)"
@@ -745,12 +759,17 @@ havenmail_deploy_roundcube_skin() {
   "$lessc" "${styles}/embed.less" "${build_dir}/embed.css"
   "$lessc" "${styles}/print.less" "${build_dir}/print.css"
 
-  # embed.css (Nachrichten-iframe) bleibt bewusst unangetastet: Havenmails
-  # Skin ist wieder Elastics helle Standard-Optik, ein weißer iframe ist
-  # darin kein Bruch mehr (siehe _variables.less-Kommentar oben zur
-  # zwischenzeitlichen Dark-Mode-Version, die genau hier zu den vom Nutzer
-  # gemeldeten weißen Flecken führte).
-  #
+  # embed.css bedient den sandboxten iframe, in dem Roundcube HTML-Mails/die
+  # Editor-Vorschau rendert — weder _styles.less noch Elastics eigenes
+  # dark.less erreichen ihn (styles.less-only bzw. sogar im offiziellen
+  # Roundcube-Release fehlt jede ".dark-mode"-Regel in embed.css, per
+  # dpkg-deb -x nachgeprüft). Ohne diesen eigenen Zusatz bliebe der
+  # iframe-Hintergrund beim Browser-Weiß, unabhängig vom dauerhaft aktiven
+  # Dark Mode (live als heller Fleck mitten in der Nachrichtenansicht
+  # aufgefallen — der ursprüngliche Auslöser für diese Datei).
+  "$lessc" "${styles}/_embed-extra.less" "${build_dir}/embed-extra.css"
+  cat "${build_dir}/embed.css" "${build_dir}/embed-extra.css" > "${build_dir}/embed-with-extra.css"
+
   # Sowohl *.css als auch *.min.css schreiben (Templates verlinken
   # bevorzugt die .min.css-Variante, siehe layout.html) und veraltete
   # .gz/.map-Geschwisterdateien entfernen — sonst weicht deren Inhalt vom
@@ -761,6 +780,7 @@ havenmail_deploy_roundcube_skin() {
     local src="${build_dir}/${name}.css"
     case "$name" in
       styles) src="${build_dir}/styles-with-dark.css" ;;
+      embed)  src="${build_dir}/embed-with-extra.css" ;;
     esac
     install -m 0644 "$src" "${styles}/${name}.css"
     install -m 0644 "$src" "${styles}/${name}.min.css"
