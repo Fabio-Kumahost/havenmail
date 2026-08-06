@@ -146,4 +146,5 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/system/backup", get(backup::get_status))
         .route("/api/v1/system/backup/trigger", post(backup::trigger))
         .route("/api/v1/audit-log", get(audit::list_audit_log))
+        .route("/api/v1/audit-log/actions", get(audit::list_audit_actions))
 }

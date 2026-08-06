@@ -18,63 +18,145 @@ function summarizeDetails(value: unknown): string {
   return json.length > 80 ? `${json.slice(0, 80)}…` : json
 }
 
+const PAGE_SIZE = 50
+
 /**
- * Zeigt die letzten Einträge der unveränderlichen Audit-Log-Hash-Chain
- * (havenmail_core::audit). super_admin sieht alle Domains, domain_admin
- * nur die eigene (serverseitig erzwungen, siehe routes/audit.rs) — die
- * Seite selbst filtert nicht zusätzlich, sie zeigt genau das, was die API
- * für die jeweilige Rolle zurückgibt.
+ * Zeigt die Audit-Log-Hash-Chain (havenmail_core::audit), seitenweise per
+ * Cursor ("mehr laden" statt Seitenzahlen — seq ist strikt monoton, ein
+ * Cursor bleibt stabil auch wenn zwischenzeitlich neue Einträge dazu-
+ * kommen, siehe routes/audit.rs). super_admin sieht alle Domains,
+ * domain_admin nur die eigene (serverseitig erzwungen).
  */
 export default function AuditLog() {
-  const [entries, setEntries] = useState<AuditLogEntry[] | null>(null)
+  const [entries, setEntries] = useState<AuditLogEntry[]>([])
+  const [actions, setActions] = useState<string[]>([])
+  const [actionFilter, setActionFilter] = useState('')
+  const [since, setSince] = useState('')
+  const [until, setUntil] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [forbidden, setForbidden] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
 
-  useEffect(() => {
+  function currentFilter(beforeSeq?: number) {
+    return {
+      action: actionFilter || undefined,
+      since: since ? new Date(since).toISOString() : undefined,
+      until: until ? new Date(until).toISOString() : undefined,
+      beforeSeq,
+      limit: PAGE_SIZE,
+    }
+  }
+
+  function reload() {
+    setLoading(true)
+    setError(null)
     api.auditLog
-      .list()
-      .then(setEntries)
+      .list(currentFilter())
+      .then((page) => {
+        setEntries(page)
+        setHasMore(page.length === PAGE_SIZE)
+      })
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 403) {
-          setError('Keine Berechtigung, das Audit-Log einzusehen.')
+          setForbidden(true)
         } else {
           setError('Audit-Log konnte nicht geladen werden.')
         }
       })
+      .finally(() => setLoading(false))
+  }
+
+  async function loadMore() {
+    if (entries.length === 0) return
+    setLoadingMore(true)
+    try {
+      const lastSeq = entries[entries.length - 1].seq
+      const page = await api.auditLog.list(currentFilter(lastSeq))
+      setEntries((prev) => [...prev, ...page])
+      setHasMore(page.length === PAGE_SIZE)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Weitere Einträge konnten nicht geladen werden.')
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
+  useEffect(() => {
+    api.auditLog.actions().then(setActions).catch(() => {})
   }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(reload, [actionFilter, since, until])
 
   return (
     <div>
       <h1>Audit-Log</h1>
-      <div className="card">
-        {error && <p className="badge badge-not_ready">{error}</p>}
-        {!error && !entries && <p className="muted">Lade…</p>}
-        {entries && entries.length === 0 && <p className="muted">Noch keine Einträge.</p>}
-        {entries && entries.length > 0 && (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Zeitpunkt</th>
-                <th>Aktion</th>
-                <th>Ziel</th>
-                <th>Details</th>
-                <th>IP</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <tr key={entry.id}>
-                  <td>{new Date(entry.created_at).toLocaleString('de-DE')}</td>
-                  <td>{entry.action}</td>
-                  <td>{entry.target}</td>
-                  <td className="muted">{summarizeDetails(entry.after ?? entry.before)}</td>
-                  <td>{entry.ip ?? '—'}</td>
+      {forbidden && (
+        <div className="card">
+          <p className="badge badge-not_ready">Keine Berechtigung, das Audit-Log einzusehen.</p>
+        </div>
+      )}
+      {!forbidden && (
+        <div className="card">
+          <div className="inline-form" style={{ marginBottom: '1rem' }}>
+            <label>
+              Aktion
+              <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)}>
+                <option value="">Alle</option>
+                {actions.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Von
+              <input type="date" value={since} onChange={(e) => setSince(e.target.value)} />
+            </label>
+            <label>
+              Bis
+              <input type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
+            </label>
+          </div>
+
+          {error && <p className="badge badge-not_ready">{error}</p>}
+          {loading && <p className="muted">Lade…</p>}
+          {!loading && entries.length === 0 && !error && (
+            <p className="muted">Keine Einträge für diese Filter.</p>
+          )}
+          {entries.length > 0 && (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Zeitpunkt</th>
+                  <th>Aktion</th>
+                  <th>Ziel</th>
+                  <th>Details</th>
+                  <th>IP</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <p className="muted">Zeigt die letzten 50 Einträge. Filterung/Pagination folgt.</p>
-      </div>
+              </thead>
+              <tbody>
+                {entries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td>{new Date(entry.created_at).toLocaleString('de-DE')}</td>
+                    <td>{entry.action}</td>
+                    <td>{entry.target}</td>
+                    <td className="muted">{summarizeDetails(entry.after ?? entry.before)}</td>
+                    <td>{entry.ip ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {hasMore && entries.length > 0 && (
+            <button onClick={loadMore} disabled={loadingMore} style={{ marginTop: '0.75rem' }}>
+              {loadingMore ? 'Lädt…' : 'Weitere laden'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

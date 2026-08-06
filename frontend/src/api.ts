@@ -213,6 +213,7 @@ export interface SystemStatus {
 
 export interface AuditLogEntry {
   id: string
+  seq: number
   actor_id: string | null
   action: string
   target: string
@@ -388,11 +389,25 @@ export const api = {
     status: () => request<SystemStatus>('GET', '/api/v1/system/status'),
   },
   auditLog: {
-    list: (domainId?: string) =>
-      request<AuditLogEntry[]>(
-        'GET',
-        `/api/v1/audit-log${domainId ? `?domain_id=${domainId}` : ''}`,
-      ),
+    list: (filter?: {
+      domainId?: string
+      action?: string
+      beforeSeq?: number
+      limit?: number
+      since?: string
+      until?: string
+    }) => {
+      const params = new URLSearchParams()
+      if (filter?.domainId) params.set('domain_id', filter.domainId)
+      if (filter?.action) params.set('action', filter.action)
+      if (filter?.beforeSeq !== undefined) params.set('before_seq', String(filter.beforeSeq))
+      if (filter?.limit !== undefined) params.set('limit', String(filter.limit))
+      if (filter?.since) params.set('since', filter.since)
+      if (filter?.until) params.set('until', filter.until)
+      const query = params.toString()
+      return request<AuditLogEntry[]>('GET', `/api/v1/audit-log${query ? `?${query}` : ''}`)
+    },
+    actions: () => request<string[]>('GET', '/api/v1/audit-log/actions'),
   },
   account: {
     changePassword: (current_password: string, new_password: string) =>

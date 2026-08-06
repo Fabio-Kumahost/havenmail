@@ -1176,3 +1176,97 @@ async fn branding_get_is_public_and_patch_is_super_admin_only() {
     .await;
     assert_eq!(status, StatusCode::OK);
 }
+
+#[tokio::test]
+async fn audit_log_supports_cursor_pagination_and_action_filter() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (super_email, super_password) = bootstrap_super_admin(&db).await;
+    let super_token = login(&app, &super_email, &super_password).await;
+
+    let domain_name = format!("audit-page-{}.test", Uuid::new_v4());
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": domain_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let domain_id = body["id"].as_str().unwrap().to_string();
+
+    // Drei Aliase anlegen -> drei "alias.create"-Einträge in Reihenfolge.
+    for source in ["a", "b", "c"] {
+        let (status, _) = call(
+            &app,
+            "POST",
+            &format!("/api/v1/domains/{domain_id}/aliases"),
+            Some(&super_token),
+            Some(json!({ "source": source, "destinations": ["ziel@example.org"] })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    // Erste Seite: limit=1 liefert genau den neuesten Eintrag ("c").
+    let (status, page1) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/audit-log?domain_id={domain_id}&limit=1"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{page1:?}");
+    let page1 = page1.as_array().unwrap();
+    assert_eq!(page1.len(), 1);
+    assert_eq!(page1[0]["after"]["source"], json!("c"));
+    let cursor = page1[0]["seq"].as_i64().unwrap();
+
+    // Zweite Seite über before_seq: nächstälterer Eintrag ("b"), nicht "c" erneut.
+    let (status, page2) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/audit-log?domain_id={domain_id}&limit=1&before_seq={cursor}"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{page2:?}");
+    let page2 = page2.as_array().unwrap();
+    assert_eq!(page2.len(), 1);
+    assert_eq!(page2[0]["after"]["source"], json!("b"));
+    assert!(page2[0]["seq"].as_i64().unwrap() < cursor);
+
+    // Aktionsfilter: nur "alias.create", alle drei ohne Limit-Beschränkung.
+    let (status, filtered) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/audit-log?domain_id={domain_id}&action=alias.create"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{filtered:?}");
+    let filtered = filtered.as_array().unwrap();
+    assert_eq!(filtered.len(), 3);
+    assert!(filtered
+        .iter()
+        .all(|e| e["action"] == json!("alias.create")));
+
+    // Aktionsliste enthält "alias.create".
+    let (status, actions) = call(
+        &app,
+        "GET",
+        "/api/v1/audit-log/actions",
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{actions:?}");
+    let actions = actions.as_array().unwrap();
+    assert!(actions.iter().any(|a| a == "alias.create"));
+}
