@@ -1,0 +1,9 @@
+/**
+ * Havenmail-Markenfarben — überschreibt Elastics @color-main/@color-link,
+ * von denen fast die gesamte UI (Buttons, Task-Menü, Checkboxen, Fokus-
+ * Ringe, Badges, Dark Mode via darken(@color-main, 30%)) abgeleitet wird.
+ * Wert entspricht branding_settings.accent_color aus dem Admin-Panel
+ * (siehe routes/branding.rs) — dieselbe Akzentfarbe wie im Control-Panel.
+ */
+@color-main:  #A88194;
+@color-link:  darken(#A88194, 10%);

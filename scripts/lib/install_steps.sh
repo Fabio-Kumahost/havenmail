@@ -616,3 +616,113 @@ havenmail_verify_health() {
   fi
   havenmail_log "Control-Plane-API ist erreichbar (/healthz OK)."
 }
+
+# Havenmail-Skin für Roundcube (falls installiert) deployen — bringt die
+# bis dahin komplett unversionierte, manuell auf diesem Server
+# eingerichtete Roundcube-Installation (Paket, DB, nginx-vhost, TLS-Zertifikat)
+# in Bezug auf ihr AUSSEHEN unter Versionskontrolle. Absichtlich NICHT Teil
+# der automatischen install.sh-Hauptsequenz: Roundcube-Paketinstallation,
+# Datenbank-Setup (dbconfig-common) und TLS-Zertifikat für die
+# webmail.<domain>-Subdomain sind noch keine automatisierten
+# Installationsschritte (siehe config/nginx/webmail.conf als reine
+# Referenzkopie des live funktionierenden vhosts, nicht als .tera-Vorlage
+# gerendert) — dieser Schritt setzt eine BEREITS vorhandene
+# Roundcube-Installation voraus und macht nur deren Skin reproduzierbar.
+# Manuell aufrufbar: `source scripts/lib/common.sh scripts/lib/install_steps.sh
+# && havenmail_deploy_roundcube_skin`.
+havenmail_deploy_roundcube_skin() {
+  local rc_share=/usr/share/roundcube
+  local rc_lib=/var/lib/roundcube
+
+  if [[ ! -d "$rc_share" ]]; then
+    havenmail_log "Roundcube nicht gefunden (${rc_share} fehlt) — Skin-Deployment übersprungen."
+    return 0
+  fi
+  if [[ ! -d "${rc_share}/skins/elastic" ]]; then
+    havenmail_err "Roundcube-Skin 'elastic' nicht gefunden — Havenmail-Skin baut auf Elastic auf (extends), kann nicht deployt werden."
+    return 1
+  fi
+
+  havenmail_log "Deploye Havenmail-Skin für Roundcube…"
+
+  # Eigene Skin-Identität (erscheint als "Havenmail" in Roundcubes
+  # Skin-Auswahl) — extends elastic (siehe meta.json), Templates/Bilder
+  # fallen für alles, was hier nicht existiert, automatisch auf Elastic
+  # zurück (Roundcubes eigener load_skin()-Mechanismus).
+  install -d -m 0755 "${rc_share}/skins/havenmail/images"
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/roundcube/skins/havenmail/meta.json" \
+    "${rc_share}/skins/havenmail/meta.json"
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/roundcube/skins/havenmail/images/logo.svg" \
+    "${rc_share}/skins/havenmail/images/logo.svg"
+
+  # Debians Roundcube-Paketierung verlinkt jeden Skin einzeln von
+  # /var/lib/roundcube/skins/<name> nach /usr/share/roundcube/skins/<name>
+  # (dort liegt der tatsächliche Web-Root) — ohne diesen Symlink meldet
+  # Roundcube "Error loading template for login", obwohl die Datei unter
+  # /usr/share/... nachweislich existiert (live so aufgetreten).
+  if [[ -d "$rc_lib/skins" && ! -e "${rc_lib}/skins/havenmail" ]]; then
+    ln -s "${rc_share}/skins/havenmail" "${rc_lib}/skins/havenmail"
+  fi
+
+  # Farb-Override: Elastic bietet dafür einen offiziellen Hook
+  # (styles/_variables.less, per `@import (reference, optional)` am Ende
+  # von variables.less eingebunden) — muss aber, weil LESS-@import
+  # dateisystem-relativ zur Kompilierzeit auflöst, PHYSISCH in Elastics
+  # eigenem styles/-Verzeichnis liegen, nicht im havenmail-Skin-Ordner
+  # (Roundcubes Skin-Fallback-Mechanismus für Templates/Bilder gilt dafür
+  # NICHT, live so verifiziert).
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/roundcube/skins/havenmail/_variables.less" \
+    "${rc_share}/skins/elastic/styles/_variables.less"
+
+  local build_dir
+  build_dir="$(mktemp -d)"
+  npm install --prefix "$build_dir" --no-save --silent less
+  local lessc="${build_dir}/node_modules/.bin/lessc"
+  local styles="${rc_share}/skins/elastic/styles"
+
+  # Dark-Mode-Regeln (styles/dark.less) sind in Elastics eigenem
+  # Release-Build an styles.css angehängt, nicht per LESS @import
+  # eingebunden (live an der ausgelieferten Paket-CSS-Datei nachvollzogen:
+  # ein zusammenhängender Block "html.dark-mode {...}" ganz am Ende) — beim
+  # Neukompilieren muss das genauso nachgebildet werden, sonst fehlt der
+  # Dark Mode komplett, obwohl meta.json ihn weiter als unterstützt meldet.
+  "$lessc" "${styles}/styles.less" "${build_dir}/styles.css"
+  "$lessc" "${styles}/dark.less" "${build_dir}/dark.css"
+  cat "${build_dir}/styles.css" "${build_dir}/dark.css" > "${build_dir}/styles-with-dark.css"
+  "$lessc" "${styles}/embed.less" "${build_dir}/embed.css"
+  "$lessc" "${styles}/print.less" "${build_dir}/print.css"
+
+  # Sowohl *.css als auch *.min.css schreiben (Templates verlinken
+  # bevorzugt die .min.css-Variante, siehe layout.html) und veraltete
+  # .gz/.map-Geschwisterdateien entfernen — sonst weicht deren Inhalt vom
+  # gerade neu geschriebenen *.css ab (kein gzip_static in
+  # config/nginx/webmail.conf, daher unkritisch für die Auslieferung
+  # selbst, aber verwirrend für Browser-Devtools/Debugging).
+  for name in styles embed print; do
+    local src="${build_dir}/${name}.css"
+    if [[ "$name" == "styles" ]]; then
+      src="${build_dir}/styles-with-dark.css"
+    fi
+    install -m 0644 "$src" "${styles}/${name}.css"
+    install -m 0644 "$src" "${styles}/${name}.min.css"
+    rm -f "${styles}/${name}.css.gz" "${styles}/${name}.min.css.gz" \
+          "${styles}/${name}.css.map" "${styles}/${name}.min.css.map"
+  done
+
+  rm -rf "$build_dir"
+
+  # config.inc.php: reine Referenzkopie, keine .tera-Vorlage — die Datei
+  # enthält keine install-zeit-spezifischen Secrets (DB-Zugangsdaten kommen
+  # über das separate, von dbconfig-common verwaltete
+  # debian-db-roundcube.php), ist also unverändert auf jedem Server mit
+  # identischer Roundcube-Version einsetzbar.
+  if [[ -f /etc/roundcube/config.inc.php ]]; then
+    install -m 0640 -o root -g www-data \
+      "${HAVENMAIL_REPO_DIR}/config/roundcube/config.inc.php" /etc/roundcube/config.inc.php
+  fi
+
+  systemctl reload nginx 2>/dev/null || true
+  systemctl reload php8.4-fpm 2>/dev/null || true
+
+  havenmail_log "Havenmail-Skin für Roundcube deployt."
+}

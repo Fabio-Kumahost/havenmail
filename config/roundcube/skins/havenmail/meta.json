@@ -1,0 +1,9 @@
+{
+	"name": "Havenmail",
+	"author": "Havenmail",
+	"extends": "elastic",
+	"license": "Creative Commons Attribution-ShareAlike",
+	"meta": {
+		"theme-color": "#A88194"
+	}
+}
