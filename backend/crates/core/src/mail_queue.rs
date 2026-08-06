@@ -125,7 +125,7 @@ pub fn request_delete(state_dir: &Path, target: &str) -> std::io::Result<()> {
             "ungültiges Ziel für Warteschlangen-Löschung",
         ));
     }
-    std::fs::write(state_dir.join("queue-delete-request"), target)
+    crate::trigger_file::write(&state_dir.join("queue-delete-request"), target)
 }
 
 #[cfg(test)]

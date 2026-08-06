@@ -43,8 +43,8 @@ pub async fn trigger(
         return Err(ApiError::Forbidden);
     }
 
-    let trigger_path = format!("{}/backup-trigger-request", state_dir());
-    std::fs::write(&trigger_path, chrono::Utc::now().to_rfc3339())
+    let trigger_path = std::path::PathBuf::from(format!("{}/backup-trigger-request", state_dir()));
+    havenmail_core::trigger_file::write(&trigger_path, &chrono::Utc::now().to_rfc3339())
         .map_err(|e| ApiError::BadRequest(format!("Backup-Anfrage fehlgeschlagen: {e}")))?;
 
     crate::audit_log::log(

@@ -22,5 +22,6 @@ pub mod rbac;
 pub mod rspamd_client;
 pub mod service_status;
 pub mod tls_status;
+pub mod trigger_file;
 
 pub use rbac::{Action, Actor, Role};

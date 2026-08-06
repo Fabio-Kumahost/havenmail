@@ -279,8 +279,8 @@ async fn apply_to_rspamd(state: &AppState, settings: &SecuritySettings) -> ApiRe
     // den eigentlichen Reload — keine weitere Härtungs-Lockerung nötig.
     let state_dir =
         std::env::var("HAVENMAIL_STATE_DIR").unwrap_or_else(|_| "/var/lib/havenmail".to_string());
-    let trigger_path = format!("{state_dir}/rspamd-reload-trigger");
-    std::fs::write(&trigger_path, chrono::Utc::now().to_rfc3339())
+    let trigger_path = std::path::PathBuf::from(format!("{state_dir}/rspamd-reload-trigger"));
+    havenmail_core::trigger_file::write(&trigger_path, &chrono::Utc::now().to_rfc3339())
         .map_err(|e| ApiError::BadRequest(format!("Rspamd-Reload-Trigger fehlgeschlagen: {e}")))?;
 
     Ok(())

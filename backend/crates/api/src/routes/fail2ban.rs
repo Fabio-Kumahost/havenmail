@@ -57,8 +57,8 @@ pub async fn unban(
         return Err(ApiError::BadRequest("ungültige IP-Adresse".to_string()));
     }
 
-    let trigger_path = format!("{}/fail2ban-unban-request", state_dir());
-    std::fs::write(&trigger_path, format!("{}:{}", req.jail, req.ip))
+    let trigger_path = std::path::PathBuf::from(format!("{}/fail2ban-unban-request", state_dir()));
+    havenmail_core::trigger_file::write(&trigger_path, &format!("{}:{}", req.jail, req.ip))
         .map_err(|e| ApiError::BadRequest(format!("Entsperr-Anfrage fehlgeschlagen: {e}")))?;
 
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
