@@ -188,10 +188,18 @@ export interface TlsStatus {
   days_remaining: number | null
 }
 
+export interface RblStatusEntry {
+  zone: string
+  status: 'ok' | 'problem'
+  message: string | null
+  updated_at: string
+}
+
 export interface SystemStatus {
   database: boolean
   services: ServiceStatus[]
   tls: TlsStatus | null
+  rbl: RblStatusEntry[]
 }
 
 export interface AuditLogEntry {

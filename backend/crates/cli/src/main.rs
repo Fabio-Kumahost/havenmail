@@ -171,6 +171,8 @@ enum Command {
         etc_dir: PathBuf,
         #[arg(long, default_value = "/var/lib/havenmail/backup-status.json")]
         backup_status_file: PathBuf,
+        #[arg(long, env = "HAVENMAIL_HOSTNAME")]
+        mail_hostname: Option<String>,
         #[arg(long, default_value_t = 14)]
         tls_warn_days: i64,
         #[arg(long, default_value_t = 90.0)]
@@ -332,6 +334,7 @@ async fn main() {
             admin_email,
             etc_dir,
             backup_status_file,
+            mail_hostname,
             tls_warn_days,
             disk_warn_percent,
             remind_after_hours,
@@ -340,6 +343,7 @@ async fn main() {
             admin_email.as_deref(),
             &etc_dir,
             &backup_status_file,
+            mail_hostname.as_deref(),
             tls_warn_days,
             disk_warn_percent,
             chrono::Duration::hours(remind_after_hours),
@@ -714,6 +718,7 @@ async fn notify_check(
     admin_email: Option<&str>,
     etc_dir: &std::path::Path,
     backup_status_file: &std::path::Path,
+    mail_hostname: Option<&str>,
     tls_warn_days: i64,
     disk_warn_percent: f32,
     remind_after: chrono::Duration,
@@ -850,6 +855,49 @@ async fn notify_check(
                         &pool,
                         "backup",
                         "Backup",
+                        status,
+                        &message,
+                        admin_email,
+                        remind_after,
+                    )
+                    .await?,
+                );
+            }
+        }
+    }
+
+    // Zustellbarkeit: eigene IP gegen gängige RBLs prüfen. Ein Check pro
+    // Zone, damit z. B. eine Spamhaus-Listung gezielt gemeldet und beim
+    // Delisting einzeln als "behoben" quittiert werden kann, statt eine
+    // von mehreren Listungen den Gesamtstatus zu verschleiern.
+    if let Some(hostname) = mail_hostname {
+        if let Some(ip) = havenmail_core::rbl_check::resolve_own_ip(hostname).await {
+            for rbl_result in havenmail_core::rbl_check::check_all(ip).await {
+                // `listed: None` (Abfrage nicht möglich, z. B. von
+                // Spamhaus blockiert, siehe rbl_check.rs) wird bewusst
+                // übersprungen statt als Problem ODER als "ok" gemeldet —
+                // beides wäre irreführend, wenn schlicht keine Aussage
+                // möglich war.
+                let Some(listed) = rbl_result.listed else {
+                    continue;
+                };
+                let status = if listed {
+                    havenmail_core::notify::CheckStatus::Problem
+                } else {
+                    havenmail_core::notify::CheckStatus::Ok
+                };
+                let message = if listed {
+                    format!("{ip} ist auf {} gelistet.", rbl_result.zone)
+                } else {
+                    format!("{ip} ist auf {} nicht gelistet.", rbl_result.zone)
+                };
+                let check_key = format!("rbl:{}", rbl_result.zone);
+                let label = format!("RBL {}", rbl_result.zone);
+                results.push(
+                    process_check(
+                        &pool,
+                        &check_key,
+                        &label,
                         status,
                         &message,
                         admin_email,

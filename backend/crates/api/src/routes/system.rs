@@ -24,6 +24,22 @@ pub struct SystemStatusResponse {
     /// Entwicklung ohne install.sh-Lauf) — siehe
     /// scripts/lib/install_steps.sh, havenmail_write_tls_expiry_file.
     pub tls: Option<TlsStatus>,
+    /// Letzter bekannter RBL-Status je geprüfter Zone (aus
+    /// `notification_state`, befüllt von `havenmail-cli notify-check`,
+    /// siehe havenmail_core::rbl_check). Leer, solange der Timer noch
+    /// nie gelaufen ist.
+    pub rbl: Vec<RblStatusEntry>,
+}
+
+#[derive(Debug, FromRow, Serialize)]
+pub struct RblStatusEntry {
+    /// check_key ohne das führende "rbl:" (siehe SELECT unten).
+    pub zone: String,
+    /// "ok" oder "problem" (notification_state.status, siehe
+    /// havenmail_core::notify::CheckStatus).
+    pub status: String,
+    pub message: Option<String>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// Liest NUR das Ablaufdatum, das install.sh/der certbot-Deploy-Hook nach
@@ -55,10 +71,23 @@ pub async fn system_status(
 
     let tls = read_tls_status();
 
+    let rbl: Vec<RblStatusEntry> = sqlx::query_as(
+        r#"
+        SELECT substring(check_key from 5) as zone, status, message, updated_at
+        FROM notification_state
+        WHERE check_key LIKE 'rbl:%'
+        ORDER BY zone
+        "#,
+    )
+    .fetch_all(&state.db)
+    .await
+    .unwrap_or_default();
+
     Ok(Json(SystemStatusResponse {
         database,
         services,
         tls,
+        rbl,
     }))
 }
 

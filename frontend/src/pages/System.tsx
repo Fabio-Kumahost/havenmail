@@ -90,10 +90,48 @@ export default function System() {
         </div>
       )}
       {status && (
-        <p className="muted">
-          Backup-/Update-Status, Warteschlangen und Spam-/Virenereignisse sind noch nicht
-          angebunden.
-        </p>
+        <div className="card">
+          <h2>Zustellbarkeit (RBL-Listen)</h2>
+          {status.rbl.length === 0 ? (
+            <p className="muted">
+              Noch keine Daten — <code>havenmail-cli notify-check</code> läuft alle 5 Minuten und
+              befüllt diese Ansicht.
+            </p>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Liste</th>
+                  <th>Status</th>
+                  <th>Zuletzt geprüft</th>
+                </tr>
+              </thead>
+              <tbody>
+                {status.rbl.map((entry) => (
+                  <tr key={entry.zone}>
+                    <td>
+                      <code>{entry.zone}</code>
+                    </td>
+                    <td>
+                      <span className={`badge badge-${entry.status === 'ok' ? 'ready' : 'not_ready'}`}>
+                        {entry.status === 'ok' ? 'nicht gelistet' : 'gelistet'}
+                      </span>
+                    </td>
+                    <td className="muted">{new Date(entry.updated_at).toLocaleString('de-DE')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="muted" style={{ marginTop: '0.75rem' }}>
+            Spamhaus ist von vielen Cloud-/Hosting-Adressen aus nicht direkt abfragbar (deren
+            eigene Anti-Missbrauchs-Maßnahme) und erscheint deshalb möglicherweise nicht in dieser
+            Liste — die anderen Listen sind davon nicht betroffen.
+          </p>
+        </div>
+      )}
+      {status && (
+        <p className="muted">Warteschlangen und Spam-/Virenereignisse sind noch nicht angebunden.</p>
       )}
     </div>
   )
