@@ -164,6 +164,9 @@ havenmail_ensure_dirs
 # vorinstalliert (in einem Debian-12-Testcontainer ohne Vorinstallation
 # schlug genau das fehl: "openssl: command not found").
 havenmail_apt_packages
+# Erst NACH havenmail_apt_packages möglich — der Systembenutzer "_rspamd"
+# entsteht mit der Paketinstallation von rspamd, existiert vorher nicht.
+havenmail_grant_rspamd_dkim_access
 havenmail_install_rust_toolchain
 havenmail_install_node
 

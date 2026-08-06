@@ -13,6 +13,17 @@ use_domain = "header";
 selector_map = "/etc/havenmail/dkim/selectors.map";
 path_map = "/etc/havenmail/dkim/keys.map";
 
+# Ohne dieses Flag berechnet Rspamd die Signatur zwar (Symbol DKIM_SIGNED
+# feuert korrekt), fügt sie aber NICHT in den Mail-Header ein — der
+# alternative Weg (Signatur über die Milter-Protokollantwort selbst,
+# statt über diesen expliziten Header-Insert) hat in dieser Rspamd-
+# Installation live nachweislich zu keiner tatsächlichen Signatur im
+# zugestellten Header geführt. Mit `true` läuft es über
+# `lua_mime.modify_headers`, das die Signatur direkt und nachvollziehbar
+# in die Nachricht schreibt (live verifiziert: DKIM-Signature-Header
+# taucht danach korrekt in der zugestellten Mail auf).
+use_milter_headers = true;
+
 # Beispiel für die Struktur der generierten Maps (vom Installer/der
 # Control-Plane geschrieben, hier nur zur Dokumentation der Ziel-Domain):
 # {{ mail_hostname }} -> havenmail /etc/havenmail/dkim/<domain>/havenmail.pem

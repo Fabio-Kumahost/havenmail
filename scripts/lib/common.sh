@@ -104,6 +104,26 @@ havenmail_ensure_system_user() {
   fi
 }
 
+# Umgekehrte Richtung zu den obigen Gruppenmitgliedschaften: hier braucht
+# nicht der havenmail-Benutzer Zugriff auf einen fremden Dienst, sondern
+# Rspamds eigener Systembenutzer (_rspamd) Lesezugriff auf die von der
+# Control-Plane geschriebenen DKIM-Dateien (private Schlüssel +
+# selector_map/keys_map, siehe routes/dns.rs) unter
+# $HAVENMAIL_ETC_DIR/dkim (0750 havenmail:havenmail). Muss NACH
+# havenmail_apt_packages laufen, da der Systembenutzer "_rspamd" erst mit
+# der Paketinstallation von rspamd entsteht — vorher existiert er noch
+# nicht. Live gefunden: ohne diese Mitgliedschaft scheitert JEDER
+# Zugriffsversuch von Rspamds Worker-Prozessen mit "Permission denied"
+# (rspamd_map_parse_backend), obwohl `rspamadm configtest` als root
+# anstandslos durchläuft — die Karten wirken dadurch scheinbar korrekt
+# konfiguriert, während die tatsächlich laufenden Worker-Prozesse die
+# Dateien nie lesen konnten und DKIM-Signierung so nie stattfand.
+havenmail_grant_rspamd_dkim_access() {
+  if getent passwd _rspamd >/dev/null 2>&1 && getent group "$HAVENMAIL_SYSTEM_USER" >/dev/null 2>&1; then
+    usermod -aG "$HAVENMAIL_SYSTEM_USER" _rspamd
+  fi
+}
+
 # Liest einen Wert aus der Env-Datei, falls vorhanden (für Idempotenz: bei
 # wiederholter Installation bereits generierte Secrets wiederverwenden statt
 # neue zu erzeugen und bestehende Logins/Verschlüsselung zu invalidieren).

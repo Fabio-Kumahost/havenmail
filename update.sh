@@ -112,6 +112,14 @@ trap rollback ERR
 havenmail_build_backend
 havenmail_build_frontend
 havenmail_render_configs
+
+# Idempotent — legt bei einer bereits laufenden Installation nichts neu an,
+# holt aber die $HAVENMAIL_ETC_DIR/dkim-Berechtigungen (Rspamd-Zugriff auf
+# DKIM-Schlüssel/-Maps, siehe common.sh) für Bestandsinstallationen nach,
+# die vor Einführung der DKIM-Rotation aktualisiert werden.
+havenmail_ensure_dirs
+havenmail_grant_rspamd_dkim_access
+
 havenmail_deploy_mail_configs
 havenmail_deploy_nginx_full
 havenmail_install_systemd_units
