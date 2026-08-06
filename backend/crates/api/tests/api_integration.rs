@@ -894,14 +894,8 @@ async fn api_token_authenticates_requests_and_can_be_revoked() {
 
     // Das API-Token selbst authentifiziert eine Anfrage — dieselben Rechte
     // wie der Account, der es erzeugt hat (super_admin hier).
-    let (status, status_body) = call(
-        &app,
-        "GET",
-        "/api/v1/system/status",
-        Some(&api_token),
-        None,
-    )
-    .await;
+    let (status, status_body) =
+        call(&app, "GET", "/api/v1/system/status", Some(&api_token), None).await;
     assert_eq!(status, StatusCode::OK, "{status_body:?}");
 
     // Erscheint in der eigenen Liste (Klartext-Token nie wieder enthalten).
@@ -944,13 +938,6 @@ async fn api_token_authenticates_requests_and_can_be_revoked() {
     assert_eq!(status, StatusCode::OK);
 
     // Danach authentifiziert es keine Anfrage mehr.
-    let (status, _) = call(
-        &app,
-        "GET",
-        "/api/v1/system/status",
-        Some(&api_token),
-        None,
-    )
-    .await;
+    let (status, _) = call(&app, "GET", "/api/v1/system/status", Some(&api_token), None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
