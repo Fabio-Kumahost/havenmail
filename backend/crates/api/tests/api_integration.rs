@@ -868,3 +868,89 @@ async fn session_list_marks_current_session_and_revoke_is_owner_scoped() {
     .await;
     assert_eq!(sessions.as_array().unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn api_token_authenticates_requests_and_can_be_revoked() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (email, password) = bootstrap_super_admin(&db).await;
+    let access_token = login(&app, &email, &password).await;
+
+    // Erzeugen.
+    let (status, create_body) = call(
+        &app,
+        "POST",
+        "/api/v1/users/me/api-tokens",
+        Some(&access_token),
+        Some(json!({ "scopes": ["ci-deploy"] })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{create_body:?}");
+    let api_token = create_body["token"].as_str().unwrap().to_string();
+    assert!(api_token.starts_with("hvm_"));
+    let token_id = create_body["id"].as_str().unwrap().to_string();
+
+    // Das API-Token selbst authentifiziert eine Anfrage — dieselben Rechte
+    // wie der Account, der es erzeugt hat (super_admin hier).
+    let (status, status_body) = call(
+        &app,
+        "GET",
+        "/api/v1/system/status",
+        Some(&api_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{status_body:?}");
+
+    // Erscheint in der eigenen Liste (Klartext-Token nie wieder enthalten).
+    let (status, list_body) = call(
+        &app,
+        "GET",
+        "/api/v1/users/me/api-tokens",
+        Some(&access_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{list_body:?}");
+    let tokens = list_body.as_array().unwrap();
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0]["scopes"], json!(["ci-deploy"]));
+    assert!(list_body.to_string().find(&api_token).is_none());
+
+    // Fremder Nutzer darf es nicht widerrufen (404, kein Existenz-Hinweis).
+    let (other_email, other_password) = bootstrap_super_admin(&db).await;
+    let other_token = login(&app, &other_email, &other_password).await;
+    let (status, _) = call(
+        &app,
+        "DELETE",
+        &format!("/api/v1/users/me/api-tokens/{token_id}"),
+        Some(&other_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Eigentümer widerruft es.
+    let (status, _) = call(
+        &app,
+        "DELETE",
+        &format!("/api/v1/users/me/api-tokens/{token_id}"),
+        Some(&access_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // Danach authentifiziert es keine Anfrage mehr.
+    let (status, _) = call(
+        &app,
+        "GET",
+        "/api/v1/system/status",
+        Some(&api_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}

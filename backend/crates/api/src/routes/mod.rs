@@ -1,4 +1,5 @@
 pub mod aliases;
+pub mod api_tokens;
 pub mod audit;
 pub mod auth;
 pub mod backup;
@@ -61,6 +62,14 @@ pub fn router() -> Router<AppState> {
         .route(
             "/api/v1/users/me/sessions/:session_id",
             delete(sessions::revoke_session),
+        )
+        .route(
+            "/api/v1/users/me/api-tokens",
+            get(api_tokens::list_api_tokens).post(api_tokens::create_api_token),
+        )
+        .route(
+            "/api/v1/users/me/api-tokens/:token_id",
+            delete(api_tokens::revoke_api_token),
         )
         .route(
             "/api/v1/domains/:domain_id/aliases",

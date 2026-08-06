@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import QRCode from 'qrcode'
-import { api, ApiError, type SessionEntry } from '../api'
+import { api, ApiError, type SessionEntry, type ApiTokenEntry } from '../api'
 import { useAuth } from '../AuthContext'
 
 export default function Account() {
@@ -11,6 +11,7 @@ export default function Account() {
       <PasswordSection />
       <TotpSection />
       <SessionsSection />
+      <ApiTokensSection />
     </div>
   )
 }
@@ -372,6 +373,149 @@ function SessionsSection() {
           </tbody>
         </table>
       )}
+    </div>
+  )
+}
+
+function ApiTokensSection() {
+  const [tokens, setTokens] = useState<ApiTokenEntry[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [revokingId, setRevokingId] = useState<string | null>(null)
+
+  const [scopesInput, setScopesInput] = useState('')
+  const [expiresInDays, setExpiresInDays] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [justCreated, setJustCreated] = useState<string | null>(null)
+
+  function reload() {
+    api.apiTokens
+      .list()
+      .then(setTokens)
+      .catch(() => setError('API-Keys konnten nicht geladen werden'))
+  }
+  useEffect(reload, [])
+
+  async function onCreate(e: FormEvent) {
+    e.preventDefault()
+    setError(null)
+    setCreating(true)
+    try {
+      const scopes = scopesInput
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+      const days = expiresInDays ? Number(expiresInDays) : undefined
+      const created = await api.apiTokens.create(scopes, days)
+      setJustCreated(created.token)
+      setScopesInput('')
+      setExpiresInDays('')
+      reload()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'API-Key konnte nicht erzeugt werden')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function onRevoke(id: string) {
+    setRevokingId(id)
+    setError(null)
+    try {
+      await api.apiTokens.revoke(id)
+      reload()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Widerrufen fehlgeschlagen')
+    } finally {
+      setRevokingId(null)
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2>API-Keys für Automatisierung</h2>
+      <p className="muted">
+        Für Skripte/CI, die die Havenmail-API ohne Passwort ansprechen sollen — hat dieselben
+        Rechte wie dieses Konto und lässt sich einzeln widerrufen.
+      </p>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+
+      {justCreated && (
+        <div className="badge badge-ready" style={{ display: 'block', padding: '0.75rem', marginBottom: '1rem' }}>
+          <p style={{ margin: '0 0 0.5rem 0' }}>
+            Key erzeugt — wird nur jetzt einmalig angezeigt, danach nicht mehr abrufbar:
+          </p>
+          <code style={{ userSelect: 'all', wordBreak: 'break-all' }}>{justCreated}</code>
+          <div style={{ marginTop: '0.5rem' }}>
+            <button type="button" onClick={() => setJustCreated(null)}>
+              Verstanden, ausblenden
+            </button>
+          </div>
+        </div>
+      )}
+
+      <form
+        className="inline-form"
+        onSubmit={onCreate}
+        style={{ flexDirection: 'column', alignItems: 'stretch', maxWidth: '24rem' }}
+      >
+        <label>
+          Label(s), kommagetrennt
+          <input
+            type="text"
+            placeholder="ci-deploy, monitoring"
+            value={scopesInput}
+            onChange={(e) => setScopesInput(e.target.value)}
+          />
+        </label>
+        <label>
+          Läuft ab nach (Tage, leer = nie)
+          <input
+            type="number"
+            min={1}
+            value={expiresInDays}
+            onChange={(e) => setExpiresInDays(e.target.value)}
+          />
+        </label>
+        <button type="submit" disabled={creating}>
+          {creating ? 'Erzeuge…' : 'Neuen API-Key erzeugen'}
+        </button>
+      </form>
+
+      {tokens && tokens.length > 0 && (
+        <table className="data-table" style={{ marginTop: '1rem' }}>
+          <thead>
+            <tr>
+              <th>Label(s)</th>
+              <th>Erzeugt</th>
+              <th>Läuft ab</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {tokens.map((t) => (
+              <tr key={t.id}>
+                <td>{t.scopes.length > 0 ? t.scopes.join(', ') : '—'}</td>
+                <td>{new Date(t.created_at).toLocaleString('de-DE')}</td>
+                <td>{t.expires_at ? new Date(t.expires_at).toLocaleString('de-DE') : 'nie'}</td>
+                <td>
+                  <button
+                    className="btn-danger"
+                    onClick={() => onRevoke(t.id)}
+                    disabled={revokingId === t.id}
+                  >
+                    {revokingId === t.id ? 'Widerrufe…' : 'Widerrufen'}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {tokens && tokens.length === 0 && <p className="muted">Noch keine API-Keys.</p>}
     </div>
   )
 }

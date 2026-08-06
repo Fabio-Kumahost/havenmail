@@ -258,6 +258,20 @@ export interface SessionEntry {
   is_current: boolean
 }
 
+export interface ApiTokenEntry {
+  id: string
+  scopes: string[]
+  expires_at: string | null
+  created_at: string
+}
+
+export interface CreatedApiToken {
+  id: string
+  token: string
+  scopes: string[]
+  expires_at: string | null
+}
+
 export interface BackupHistoryEntry {
   filename: string
   size_bytes: number
@@ -346,6 +360,16 @@ export const api = {
         'DELETE',
         `/api/v1/users/me/sessions/${id}`,
       ),
+  },
+  apiTokens: {
+    list: () => request<ApiTokenEntry[]>('GET', '/api/v1/users/me/api-tokens'),
+    create: (scopes: string[], expires_in_days?: number) =>
+      request<CreatedApiToken>('POST', '/api/v1/users/me/api-tokens', {
+        scopes,
+        expires_in_days,
+      }),
+    revoke: (id: string) =>
+      request<{ status: string }>('DELETE', `/api/v1/users/me/api-tokens/${id}`),
   },
   securitySettings: {
     get: () => request<SecuritySettings>('GET', '/api/v1/system/security-settings'),
