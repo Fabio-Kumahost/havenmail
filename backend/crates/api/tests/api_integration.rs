@@ -1270,3 +1270,108 @@ async fn audit_log_supports_cursor_pagination_and_action_filter() {
     let actions = actions.as_array().unwrap();
     assert!(actions.iter().any(|a| a == "alias.create"));
 }
+
+#[tokio::test]
+async fn cross_domain_search_scopes_by_role() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (super_email, super_password) = bootstrap_super_admin(&db).await;
+    let super_token = login(&app, &super_email, &super_password).await;
+
+    let unique = Uuid::new_v4().simple().to_string();
+    let domain_a_name = format!("search-a-{unique}.test");
+    let domain_b_name = format!("search-b-{unique}.test");
+
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": domain_a_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let domain_a_id = body["id"].as_str().unwrap().to_string();
+
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": domain_b_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let domain_b_id = body["id"].as_str().unwrap().to_string();
+
+    let findme = format!("findme{unique}");
+    let (status, _) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_a_id}/users"),
+        Some(&super_token),
+        Some(json!({ "local_part": findme, "password": "at-least-12-characters" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // super_admin findet das Postfach über die Suche.
+    let (status, results) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/search?q={findme}"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{results:?}");
+    let results = results.as_array().unwrap();
+    assert!(results
+        .iter()
+        .any(|r| r["kind"] == "user" && r["local_part"] == json!(findme)));
+
+    // Domain-Suche funktioniert ebenfalls.
+    let (status, results) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/search?q=search-a-{unique}"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{results:?}");
+    let results = results.as_array().unwrap();
+    assert!(results
+        .iter()
+        .any(|r| r["kind"] == "domain" && r["domain_name"] == json!(domain_a_name)));
+
+    // domain_admin von Domain B findet das Postfach in Domain A NICHT.
+    let admin_password = "domain-admin-secret-pw!!";
+    let (status, _) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_b_id}/users"),
+        Some(&super_token),
+        Some(json!({ "local_part": "admin", "password": admin_password, "role": "domain_admin" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let admin_token = login(&app, &format!("admin@{domain_b_name}"), admin_password).await;
+    let (status, results) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/search?q={findme}"),
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{results:?}");
+    assert_eq!(results.as_array().unwrap().len(), 0);
+
+    // Zu kurze Anfrage liefert bewusst nichts, kein Full-Table-Scan-Ergebnis.
+    let (status, results) = call(&app, "GET", "/api/v1/search?q=a", Some(&super_token), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(results.as_array().unwrap().len(), 0);
+}

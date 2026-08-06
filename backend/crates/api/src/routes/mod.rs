@@ -10,6 +10,7 @@ pub mod domains;
 pub mod fail2ban;
 pub mod forwards;
 pub mod mail_queue;
+pub mod search;
 pub mod security_settings;
 pub mod sessions;
 pub mod system;
@@ -36,6 +37,7 @@ pub fn router() -> Router<AppState> {
             post(domains::create_domain).get(domains::list_domains),
         )
         .route("/api/v1/domains/overview", get(domains::domains_overview))
+        .route("/api/v1/search", get(search::search))
         .route(
             "/api/v1/domains/:domain_id",
             get(domains::get_domain)

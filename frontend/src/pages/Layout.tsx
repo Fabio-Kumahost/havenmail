@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { useBranding } from '../BrandingContext'
+import { api, type SearchResult } from '../api'
 
 const ICONS = {
   dashboard: (
@@ -105,6 +107,7 @@ export default function Layout() {
           )}
           <span>{branding.product_name}</span>
         </div>
+        <GlobalSearch />
         <NavLink to="/" end>
           {ICONS.dashboard}
           <span>Dashboard</span>
@@ -157,6 +160,106 @@ export default function Layout() {
       <main className="content">
         <Outlet />
       </main>
+    </div>
+  )
+}
+
+/**
+ * Domänenübergreifende Live-Suche (debounced) in der Sidebar — man muss
+ * nicht mehr vorher wissen, in welcher Domain ein Postfach liegt. Ein
+ * Klick auf ein Ergebnis navigiert zur Domain-Detail-Seite (auch bei
+ * einem Postfach-Treffer — es gibt noch keine eigene Postfach-Detailseite
+ * zum direkt Hinspringen).
+ */
+function GlobalSearch() {
+  const navigate = useNavigate()
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<SearchResult[]>([])
+  const [open, setOpen] = useState(false)
+  const [searching, setSearching] = useState(false)
+
+  useEffect(() => {
+    if (query.trim().length < 2) {
+      setResults([])
+      return
+    }
+    setSearching(true)
+    const timer = setTimeout(() => {
+      api
+        .search(query.trim())
+        .then((r) => {
+          setResults(r)
+          setOpen(true)
+        })
+        .catch(() => setResults([]))
+        .finally(() => setSearching(false))
+    }, 250)
+    return () => clearTimeout(timer)
+  }, [query])
+
+  function onSelect(result: SearchResult) {
+    setOpen(false)
+    setQuery('')
+    navigate(`/domains/${result.domain_id}`)
+  }
+
+  return (
+    <div style={{ position: 'relative', padding: '0 0.75rem', marginBottom: '0.5rem' }}>
+      <input
+        type="search"
+        placeholder="Postfach oder Domain suchen…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onFocus={() => results.length > 0 && setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        style={{ width: '100%' }}
+      />
+      {open && (
+        <div
+          className="card"
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: '0.75rem',
+            right: '0.75rem',
+            zIndex: 20,
+            maxHeight: '20rem',
+            overflowY: 'auto',
+            padding: '0.5rem',
+          }}
+        >
+          {searching && <p className="muted" style={{ margin: 0 }}>Suche…</p>}
+          {!searching && results.length === 0 && (
+            <p className="muted" style={{ margin: 0 }}>Keine Treffer.</p>
+          )}
+          {!searching &&
+            results.map((r, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => onSelect(r)}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  textAlign: 'left',
+                  background: 'none',
+                  border: 'none',
+                  padding: '0.4rem 0.25rem',
+                }}
+              >
+                {r.kind === 'domain' ? (
+                  <>
+                    <strong>{r.domain_name}</strong> <span className="muted">Domain</span>
+                  </>
+                ) : (
+                  <>
+                    {r.local_part}@{r.domain_name} <span className="muted">Postfach</span>
+                  </>
+                )}
+              </button>
+            ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -123,6 +123,10 @@ export interface Domain {
   created_at: string
 }
 
+export type SearchResult =
+  | { kind: 'domain'; domain_id: string; domain_name: string }
+  | { kind: 'user'; user_id: string; domain_id: string; domain_name: string; local_part: string }
+
 export interface DomainOverviewEntry {
   id: string
   name: string
@@ -343,6 +347,8 @@ export interface BackupStatus {
 export const api = {
   login: (email: string, password: string, totp_code?: string) =>
     request<LoginResult>('POST', '/api/v1/auth/login', { email, password, totp_code }),
+  search: (q: string) =>
+    request<SearchResult[]>('GET', `/api/v1/search?q=${encodeURIComponent(q)}`),
   domains: {
     list: () => request<Domain[]>('GET', '/api/v1/domains'),
     create: (name: string) => request<Domain>('POST', '/api/v1/domains', { name }),
