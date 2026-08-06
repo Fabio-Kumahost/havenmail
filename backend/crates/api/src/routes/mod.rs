@@ -127,6 +127,14 @@ pub fn router() -> Router<AppState> {
             post(dns::generate_dkim_key),
         )
         .route(
+            "/api/v1/domains/:domain_id/dkim-keys",
+            get(dns::list_dkim_keys),
+        )
+        .route(
+            "/api/v1/domains/:domain_id/dkim-keys/:selector/activate",
+            post(dns::activate_dkim_key),
+        )
+        .route(
             "/api/v1/domains/:domain_id/dns-recommendations",
             get(dns::dns_recommendations),
         )

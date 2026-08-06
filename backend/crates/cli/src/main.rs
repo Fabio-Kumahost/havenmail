@@ -177,6 +177,11 @@ enum Command {
         tls_warn_days: i64,
         #[arg(long, default_value_t = 90.0)]
         disk_warn_percent: f32,
+        /// Ab diesem Alter (Tage seit `dkim_keys.created_at` des aktiven
+        /// Schlüssels) gilt ein DKIM-Schlüssel als rotationsbedürftig —
+        /// reine Erinnerung, kein automatisches Ablaufen/Sperren.
+        #[arg(long, default_value_t = 180)]
+        dkim_warn_days: i64,
         #[arg(long, default_value_t = 24)]
         remind_after_hours: i64,
     },
@@ -337,6 +342,7 @@ async fn main() {
             mail_hostname,
             tls_warn_days,
             disk_warn_percent,
+            dkim_warn_days,
             remind_after_hours,
         } => notify_check(
             &database_url,
@@ -346,6 +352,7 @@ async fn main() {
             mail_hostname.as_deref(),
             tls_warn_days,
             disk_warn_percent,
+            dkim_warn_days,
             chrono::Duration::hours(remind_after_hours),
         )
         .await
@@ -721,6 +728,7 @@ async fn notify_check(
     mail_hostname: Option<&str>,
     tls_warn_days: i64,
     disk_warn_percent: f32,
+    dkim_warn_days: i64,
     remind_after: chrono::Duration,
 ) -> Result<Value, String> {
     let pool = havenmail_core::db::connect(database_url)
@@ -925,6 +933,43 @@ async fn notify_check(
                 );
             }
         }
+    }
+
+    // DKIM-Schlüsselalter je Domain — reine Erinnerung (kein Ablaufen/
+    // Sperren), damit ein Admin regelmäßig rotiert statt einen DKIM-
+    // Schlüssel jahrelang unangetastet zu lassen. Ein Check pro Domain,
+    // analog zu den RBL-Zonen oben.
+    let dkim_ages: Vec<(String, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+        "SELECT d.name, k.created_at FROM dkim_keys k JOIN domains d ON d.id = k.domain_id WHERE k.active = true",
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    for (domain_name, created_at) in dkim_ages {
+        let age_days = (chrono::Utc::now() - created_at).num_days();
+        let status = if age_days >= dkim_warn_days {
+            havenmail_core::notify::CheckStatus::Problem
+        } else {
+            havenmail_core::notify::CheckStatus::Ok
+        };
+        let message = format!(
+            "DKIM-Schlüssel für {domain_name} ist {age_days} Tage alt (Schwelle: {dkim_warn_days} Tage) — Rotation im Panel unter Domain-Details empfohlen."
+        );
+        let check_key = format!("dkim_age:{domain_name}");
+        let label = format!("DKIM-Schlüsselalter {domain_name}");
+        results.push(
+            process_check(
+                &pool,
+                &check_key,
+                &label,
+                status,
+                &message,
+                admin_email,
+                webhook_url.as_deref(),
+                remind_after,
+            )
+            .await?,
+        );
     }
 
     let sent = results

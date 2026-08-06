@@ -12,6 +12,7 @@ pub mod clamav_stats;
 pub mod config_render;
 pub mod db;
 pub mod dkim;
+pub mod dkim_apply;
 pub mod dns_check;
 pub mod fail2ban;
 pub mod mail_flow;

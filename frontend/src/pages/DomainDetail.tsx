@@ -7,6 +7,7 @@ import {
   type Alias,
   type DnsRecommendations,
   type DnsCheckResult,
+  type DkimKeyEntry,
   type ImportResponse,
   ApiError,
 } from '../api'
@@ -585,6 +586,7 @@ function DnsSection({ domainId, onError }: { domainId: string; onError: (msg: st
           DKIM-Schlüssel erzeugen
         </button>
       )}
+      {rec.dkim && <DkimKeysSection domainId={domainId} onActivated={reload} onError={onError} />}
       <div style={{ marginTop: '1rem' }}>
         <button onClick={onCheck} disabled={checking}>
           {checking ? 'Prüfe…' : 'DNS jetzt prüfen'}
@@ -621,5 +623,133 @@ function DnsSection({ domainId, onError }: { domainId: string; onError: (msg: st
         )}
       </div>
     </section>
+  )
+}
+
+function formatAgeDays(createdAt: string): number {
+  return Math.floor((Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24))
+}
+
+/**
+ * DKIM-Schlüsselrotation (siehe routes/dns.rs): ein neu erzeugter Schlüssel
+ * ersetzt den aktiven NICHT sofort, sondern startet "pending" — der Admin
+ * veröffentlicht zuerst den neuen DNS-TXT-Eintrag und aktiviert den
+ * Schlüssel erst danach (DNS-Propagation braucht Zeit; Empfänger mit noch
+ * gecachtem altem öffentlichen Schlüssel sollen die bisherige Signatur
+ * weiter validieren können).
+ */
+function DkimKeysSection({
+  domainId,
+  onActivated,
+  onError,
+}: {
+  domainId: string
+  onActivated: () => void
+  onError: (msg: string) => void
+}) {
+  const [keys, setKeys] = useState<DkimKeyEntry[]>([])
+  const [pendingDns, setPendingDns] = useState<{ name: string; value: string } | null>(null)
+  const [generating, setGenerating] = useState(false)
+  const [activating, setActivating] = useState<string | null>(null)
+
+  function reload() {
+    api.dns.listDkimKeys(domainId).then(setKeys).catch(() => {})
+  }
+  useEffect(reload, [domainId])
+
+  async function onGenerateRotation() {
+    setGenerating(true)
+    try {
+      const generated = await api.dns.generateDkim(domainId)
+      if (!generated.active) {
+        setPendingDns({ name: generated.dns_record_name, value: generated.dns_record_value })
+      }
+      reload()
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : 'DKIM-Erzeugung fehlgeschlagen')
+    } finally {
+      setGenerating(false)
+    }
+  }
+
+  async function onActivate(selector: string) {
+    setActivating(selector)
+    try {
+      await api.dns.activateDkimKey(domainId, selector)
+      setPendingDns(null)
+      reload()
+      onActivated()
+    } catch (err) {
+      onError(err instanceof ApiError ? err.message : 'Aktivierung fehlgeschlagen')
+    } finally {
+      setActivating(null)
+    }
+  }
+
+  const activeKey = keys.find((k) => k.active)
+
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <h3 style={{ marginBottom: '0.25rem' }}>DKIM-Schlüssel</h3>
+      {activeKey && (
+        <p className="muted" style={{ marginTop: 0 }}>
+          Aktiver Schlüssel <code>{activeKey.selector}</code> ist{' '}
+          {formatAgeDays(activeKey.created_at)} Tage alt.
+        </p>
+      )}
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Selektor</th>
+            <th>Alter</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {keys.map((k) => (
+            <tr key={k.selector}>
+              <td>
+                <code>{k.selector}</code>
+              </td>
+              <td className="muted">{formatAgeDays(k.created_at)} Tage</td>
+              <td>
+                <span className={`badge badge-${k.active ? 'ready' : 'not_ready'}`}>
+                  {k.active ? 'aktiv' : 'ausstehend'}
+                </span>
+              </td>
+              <td>
+                {!k.active && (
+                  <button
+                    onClick={() => onActivate(k.selector)}
+                    disabled={activating === k.selector}
+                  >
+                    {activating === k.selector ? 'Aktiviere…' : 'Aktivieren'}
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <button onClick={onGenerateRotation} disabled={generating} style={{ marginTop: '0.5rem' }}>
+        {generating ? 'Erzeuge…' : 'Neuen Schlüssel erzeugen (Rotation)'}
+      </button>
+      {pendingDns && (
+        <div className="card" style={{ marginTop: '0.75rem' }}>
+          <p className="muted" style={{ marginTop: 0 }}>
+            Neuer Schlüssel erzeugt, aber noch nicht aktiv. Zuerst diesen DNS-TXT-Eintrag anlegen
+            und die Propagation abwarten, dann oben in der Tabelle aktivieren:
+          </p>
+          <p>
+            <code>{pendingDns.name}</code>
+          </p>
+          <p className="dns-value">
+            <code>{pendingDns.value}</code>
+          </p>
+          <button onClick={() => navigator.clipboard.writeText(pendingDns.value)}>Kopieren</button>
+        </div>
+      )}
+    </div>
   )
 }

@@ -192,6 +192,19 @@ export interface DnsCheckResult {
   status: 'ok' | 'missing' | 'mismatch'
 }
 
+export interface DkimKeyEntry {
+  selector: string
+  active: boolean
+  created_at: string
+}
+
+export interface GeneratedDkimKey {
+  selector: string
+  dns_record_name: string
+  dns_record_value: string
+  active: boolean
+}
+
 export interface ServiceStatus {
   unit: string
   active: boolean
@@ -409,12 +422,16 @@ export const api = {
     recommendations: (domainId: string) =>
       request<DnsRecommendations>('GET', `/api/v1/domains/${domainId}/dns-recommendations`),
     generateDkim: (domainId: string) =>
-      request<{ selector: string; dns_record_name: string; dns_record_value: string }>(
-        'POST',
-        `/api/v1/domains/${domainId}/dkim`,
-      ),
+      request<GeneratedDkimKey>('POST', `/api/v1/domains/${domainId}/dkim`),
     check: (domainId: string) =>
       request<{ results: DnsCheckResult[] }>('POST', `/api/v1/domains/${domainId}/dns-check`),
+    listDkimKeys: (domainId: string) =>
+      request<DkimKeyEntry[]>('GET', `/api/v1/domains/${domainId}/dkim-keys`),
+    activateDkimKey: (domainId: string, selector: string) =>
+      request<{ status: string }>(
+        'POST',
+        `/api/v1/domains/${domainId}/dkim-keys/${encodeURIComponent(selector)}/activate`,
+      ),
   },
   health: {
     ready: () => request<{ status: string; checks: Record<string, boolean> }>('GET', '/readyz'),

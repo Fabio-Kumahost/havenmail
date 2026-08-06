@@ -1,0 +1,15 @@
+-- DKIM-Schlüsselrotation: `generate_dkim_key` legte bisher IMMER unter dem
+-- gleichen, festen `domains.dkim_selector` ab und überschrieb per
+-- ON CONFLICT sofort den bestehenden aktiven Schlüssel — ein neu erzeugter
+-- Schlüssel wurde augenblicklich live genutzt, obwohl der zugehörige
+-- DNS-TXT-Eintrag noch gar nicht propagiert sein konnte (Empfänger, die den
+-- alten öffentlichen Schlüssel noch gecacht haben, hätten die Signatur der
+-- eigentlich legitimen Mail dann als ungültig verworfen).
+--
+-- Ab jetzt bekommt jeder neu erzeugte Schlüssel einen EIGENEN, neuen
+-- Selektor (Zeitstempel-basiert, siehe routes/dns.rs) und startet inaktiv
+-- ("pending") — erst ein expliziter Aktivierungsschritt macht ihn zum
+-- signierenden Schlüssel. Diese partielle Unique-Constraint stellt sicher,
+-- dass pro Domain nie mehr als ein Schlüssel gleichzeitig aktiv ist, auch
+-- wenn ein künftiger Bug die Aktivierungslogik umgeht.
+create unique index dkim_keys_one_active_per_domain on dkim_keys (domain_id) where active;

@@ -25,11 +25,15 @@ RestartSec=2
 # Kommentar). Derselbe Systembenutzer (uid 5000) besitzt diese
 # Verzeichnisse bereits regulär (siehe scripts/lib/common.sh), die
 # Lockerung hier ist rein die ProtectSystem=strict-Bind-Mount-Ebene.
+# /etc/havenmail/dkim NUR dieses Unterverzeichnis, nicht ganz
+# /etc/havenmail (das havenmail.env mit DB-Passwort/Secrets-Key enthält) —
+# die DKIM-Schlüsselrotation (routes/dns.rs) schreibt dort private
+# Schlüssel + die von Rspamd gelesenen selector_map/keys_map-Dateien.
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/var/lib/havenmail /var/log/havenmail /etc/rspamd/local.d /var/mail/havenmail
+ReadWritePaths=/var/lib/havenmail /var/log/havenmail /etc/rspamd/local.d /var/mail/havenmail /etc/havenmail/dkim
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

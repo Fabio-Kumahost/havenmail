@@ -52,6 +52,13 @@ havenmail_ensure_dirs() {
   install -d -m 0750 -o "$HAVENMAIL_SYSTEM_USER" -g "$HAVENMAIL_SYSTEM_USER" "$HAVENMAIL_STATE_DIR"
   install -d -m 0750 -o "$HAVENMAIL_SYSTEM_USER" -g "$HAVENMAIL_SYSTEM_USER" "$HAVENMAIL_MAIL_DIR"
   install -d -m 0750 -o "$HAVENMAIL_SYSTEM_USER" -g "$HAVENMAIL_SYSTEM_USER" "$HAVENMAIL_LOG_DIR"
+  # Eigenes Unterverzeichnis, NICHT $HAVENMAIL_ETC_DIR selbst beschreibbar
+  # machen (das bleibt root:root 0750 — enthält havenmail.env mit
+  # DB-Passwort/Secrets-Key). Private DKIM-Schlüssel + die von Rspamd
+  # gelesenen selector_map/keys_map (siehe routes/dns.rs) landen hier;
+  # havenmail-api.service bekommt dafür genau diesen Unterpfad in
+  # ReadWritePaths, nicht das übergeordnete Verzeichnis.
+  install -d -m 0750 -o "$HAVENMAIL_SYSTEM_USER" -g "$HAVENMAIL_SYSTEM_USER" "$HAVENMAIL_ETC_DIR/dkim"
 }
 
 havenmail_ensure_system_user() {

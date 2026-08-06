@@ -33,11 +33,34 @@ pub struct DkimKeyResponse {
     pub selector: String,
     pub dns_record_name: String,
     pub dns_record_value: String,
+    pub active: bool,
 }
 
-/// Erzeugt (oder erneuert) den DKIM-Schlüssel einer Domain. Der private
-/// Schlüssel wird nur verschlüsselt gespeichert, nie in der API-Antwort
-/// zurückgegeben.
+#[derive(Debug, Serialize, FromRow)]
+pub struct DkimKeyListEntry {
+    pub selector: String,
+    pub active: bool,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Verzeichnis der entschlüsselt auf Platte liegenden privaten Schlüssel
+/// (nur die AKTIVEN werden dort tatsächlich gebraucht, siehe
+/// `apply_dkim_maps` unten — ein gerade erzeugter, noch nicht aktivierter
+/// Schlüssel liegt trotzdem schon dort, damit die Aktivierung selbst kein
+/// Krypto-Handling mehr braucht, nur noch die beiden Map-Dateien).
+fn dkim_dir() -> std::path::PathBuf {
+    std::env::var("HAVENMAIL_DKIM_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("/etc/havenmail/dkim"))
+}
+
+/// Erzeugt einen NEUEN DKIM-Schlüssel mit eigenem, zeitstempelbasiertem
+/// Selektor (Rotation ohne den bisherigen aktiven Schlüssel sofort zu
+/// ersetzen — Empfänger, die den alten öffentlichen Schlüssel noch
+/// gecacht haben, dürfen mit der bisherigen Signatur weiter validieren
+/// können, bis der neue DNS-TXT-Eintrag propagiert ist). Ausnahme: hat die
+/// Domain noch GAR keinen Schlüssel, wird der erste sofort aktiv — es gibt
+/// nichts zu schützen, wenn vorher nichts signiert wurde.
 pub async fn generate_dkim_key(
     State(state): State<AppState>,
     AuthUser(actor): AuthUser,
@@ -49,6 +72,18 @@ pub async fn generate_dkim_key(
     }
     let domain = fetch_domain_or_404(&state.db, domain_id).await?;
 
+    let has_any_key: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM dkim_keys WHERE domain_id = $1)")
+            .bind(domain_id)
+            .fetch_one(&state.db)
+            .await?;
+    let is_first_key = !has_any_key;
+
+    // Zeitstempelbasiert statt fortlaufender Nummer — kollisionsfrei ohne
+    // eine weitere Abfrage, und der Zeitpunkt der Erzeugung ist am
+    // Selektor selbst schon ablesbar.
+    let selector = format!("dkim{}", chrono::Utc::now().format("%Y%m%d%H%M%S"));
+
     let generated = havenmail_core::dkim::generate_dkim_key()
         .map_err(|e| ApiError::TokenIssue(e.to_string()))?;
     let encrypted =
@@ -56,24 +91,52 @@ pub async fn generate_dkim_key(
             .map_err(|e| ApiError::TokenIssue(e.to_string()))?;
 
     sqlx::query(
-        r#"
-        INSERT INTO dkim_keys (domain_id, selector, private_key_enc, public_key, active)
-        VALUES ($1, $2, $3, $4, true)
-        ON CONFLICT (domain_id, selector)
-        DO UPDATE SET private_key_enc = EXCLUDED.private_key_enc, public_key = EXCLUDED.public_key, active = true
-        "#,
+        "INSERT INTO dkim_keys (domain_id, selector, private_key_enc, public_key, active) \
+         VALUES ($1, $2, $3, $4, $5)",
     )
     .bind(domain_id)
-    .bind(&domain.dkim_selector)
+    .bind(&selector)
     .bind(&encrypted)
     .bind(&generated.dns_txt_value)
+    .bind(is_first_key)
     .execute(&state.db)
     .await?;
 
+    // Privatschlüssel schon jetzt entschlüsselt auf Platte ablegen (0640,
+    // nur havenmail/dovecot lesbar — Verzeichnis wird analog zu
+    // ReadWritePaths unten mit denselben Rechten wie /var/mail gehalten).
+    // Aktivierung selbst muss dann nur noch die Maps neu schreiben, kein
+    // erneutes Entschlüsseln.
+    let key_path = havenmail_core::dkim_apply::key_file_path(&dkim_dir(), &domain.name, &selector);
+    if let Some(parent) = key_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| ApiError::BadRequest(format!("DKIM-Verzeichnis fehlt: {e}")))?;
+    }
+    std::fs::write(&key_path, &generated.private_key_pem).map_err(|e| {
+        ApiError::BadRequest(format!(
+            "Privatschlüssel konnte nicht geschrieben werden: {e}"
+        ))
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&key_path, std::fs::Permissions::from_mode(0o640));
+    }
+
+    if is_first_key {
+        sqlx::query("UPDATE domains SET dkim_selector = $1 WHERE id = $2")
+            .bind(&selector)
+            .bind(domain_id)
+            .execute(&state.db)
+            .await?;
+        apply_dkim_maps(&state).await?;
+    }
+
     let response = DkimKeyResponse {
-        selector: domain.dkim_selector.clone(),
-        dns_record_name: format!("{}._domainkey.{}", domain.dkim_selector, domain.name),
+        selector: selector.clone(),
+        dns_record_name: format!("{selector}._domainkey.{}", domain.name),
         dns_record_value: generated.dns_txt_value,
+        active: is_first_key,
     };
 
     // Nur den öffentlichen DNS-TXT-Wert protokollieren (ohnehin zur
@@ -91,6 +154,199 @@ pub async fn generate_dkim_key(
     .await;
 
     Ok(Json(response))
+}
+
+/// Historie/Alter aller je erzeugten Schlüssel einer Domain — für die
+/// altersbasierte Anzeige im Panel und um pending (noch nicht aktive)
+/// Rotationsschlüssel zum Aktivieren aufzulisten.
+pub async fn list_dkim_keys(
+    State(state): State<AppState>,
+    AuthUser(actor): AuthUser,
+    Path(domain_id): Path<Uuid>,
+) -> ApiResult<Json<Vec<DkimKeyListEntry>>> {
+    if !actor.can(Action::ManageDomain, Some(domain_id)) {
+        return Err(ApiError::NotFound);
+    }
+    let keys: Vec<DkimKeyListEntry> = sqlx::query_as(
+        "SELECT selector, active, created_at FROM dkim_keys WHERE domain_id = $1 ORDER BY created_at DESC",
+    )
+    .bind(domain_id)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(Json(keys))
+}
+
+/// Macht einen zuvor per `generate_dkim_key` erzeugten (pending) Schlüssel
+/// zum aktiven Signierschlüssel der Domain — erst hier wird die
+/// tatsächlich wirksame Rspamd-Konfiguration (selector_map/path_map) neu
+/// geschrieben. Der Admin ruft das idealerweise erst auf, nachdem der
+/// neue DNS-TXT-Eintrag propagiert ist (siehe DkimKeyResponse beim
+/// Erzeugen).
+pub async fn activate_dkim_key(
+    State(state): State<AppState>,
+    AuthUser(actor): AuthUser,
+    Path((domain_id, selector)): Path<(Uuid, String)>,
+    headers: HeaderMap,
+) -> ApiResult<Json<serde_json::Value>> {
+    if !actor.can(Action::ManageDomain, Some(domain_id)) {
+        return Err(ApiError::NotFound);
+    }
+    let domain = fetch_domain_or_404(&state.db, domain_id).await?;
+
+    let mut tx = state.db.begin().await?;
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM dkim_keys WHERE domain_id = $1 AND selector = $2)",
+    )
+    .bind(domain_id)
+    .bind(&selector)
+    .fetch_one(&mut *tx)
+    .await?;
+    if !exists {
+        return Err(ApiError::NotFound);
+    }
+    sqlx::query("UPDATE dkim_keys SET active = false WHERE domain_id = $1")
+        .bind(domain_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("UPDATE dkim_keys SET active = true WHERE domain_id = $1 AND selector = $2")
+        .bind(domain_id)
+        .bind(&selector)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("UPDATE domains SET dkim_selector = $1 WHERE id = $2")
+        .bind(&selector)
+        .bind(domain_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+
+    apply_dkim_maps(&state).await?;
+
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "dkim.activate",
+        &domain_id.to_string(),
+        Some(domain_id),
+        None,
+        Some(serde_json::json!({ "domain": domain.name, "selector": selector })),
+    )
+    .await;
+
+    Ok(Json(
+        serde_json::json!({ "status": "aktiviert", "selector": selector }),
+    ))
+}
+
+/// Rendert `selector_map`/`path_map` aus ALLEN aktuell aktiven
+/// DKIM-Schlüsseln domänenübergreifend neu, prüft mit `rspamadm
+/// configtest` und stößt bei Erfolg einen Reload an — dasselbe
+/// Sicherheitsnetz-Muster wie `security_settings::apply_to_rspamd`. Wird
+/// bei jeder Aktivierung sowie beim allerersten Schlüssel einer Domain
+/// aufgerufen, liest aber immer den kompletten, aktuellen Bestand (nicht
+/// nur die eine gerade geänderte Domain), da beide Dateien
+/// domänenübergreifend sind.
+async fn apply_dkim_maps(state: &AppState) -> ApiResult<()> {
+    let dir = dkim_dir();
+    let active_keys: Vec<(String, String)> = sqlx::query_as(
+        "SELECT d.name, k.selector FROM dkim_keys k JOIN domains d ON d.id = k.domain_id WHERE k.active = true",
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let entries: Vec<havenmail_core::dkim_apply::ActiveDkimKey> = active_keys
+        .into_iter()
+        .map(
+            |(domain_name, selector)| havenmail_core::dkim_apply::ActiveDkimKey {
+                domain_name,
+                selector,
+            },
+        )
+        .collect();
+
+    let selector_map = havenmail_core::dkim_apply::render_selector_map(&entries);
+    let path_map = havenmail_core::dkim_apply::render_path_map(&dir, &entries);
+
+    let selector_map_path = dir.join("selectors.map");
+    let path_map_path = dir.join("keys.map");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| ApiError::BadRequest(format!("DKIM-Verzeichnis fehlt: {e}")))?;
+
+    let backup_selector = std::fs::read_to_string(&selector_map_path).ok();
+    let backup_path = std::fs::read_to_string(&path_map_path).ok();
+    std::fs::write(&selector_map_path, &selector_map).map_err(|e| {
+        ApiError::BadRequest(format!(
+            "selectors.map konnte nicht geschrieben werden: {e}"
+        ))
+    })?;
+    std::fs::write(&path_map_path, &path_map).map_err(|e| {
+        ApiError::BadRequest(format!("keys.map konnte nicht geschrieben werden: {e}"))
+    })?;
+
+    let configtest = tokio::process::Command::new("rspamadm")
+        .arg("configtest")
+        .output()
+        .await;
+    // Anders als bei security_settings::apply_to_rspamd (dort läuft
+    // rspamadm auf jedem Havenmail-Server garantiert, siehe dortiger
+    // Kommentar) wird DIESER Pfad schon beim allerersten DKIM-Schlüssel
+    // einer frisch angelegten Domain durchlaufen — auch in Umgebungen ohne
+    // installiertes Rspamd (CI-Tests, siehe api_integration.rs). Ein
+    // fehlendes `rspamadm`-Binary (NotFound) ist dort kein
+    // Konfigurationsfehler, sondern schlicht "kein Rspamd vorhanden" —
+    // die geschriebenen Map-Dateien bleiben dann unverifiziert stehen,
+    // statt die Anfrage mit 400 abzulehnen. Meldet `rspamadm` sich
+    // tatsächlich zu Wort und lehnt ab, bleibt das weiterhin ein harter
+    // Fehler mit Rollback (echter Konfigurationsfehler).
+    let binary_missing = matches!(
+        &configtest,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound
+    );
+    let configtest_ok =
+        binary_missing || matches!(&configtest, Ok(output) if output.status.success());
+    if !configtest_ok {
+        match backup_selector {
+            Some(c) => {
+                let _ = std::fs::write(&selector_map_path, c);
+            }
+            None => {
+                let _ = std::fs::remove_file(&selector_map_path);
+            }
+        }
+        match backup_path {
+            Some(c) => {
+                let _ = std::fs::write(&path_map_path, c);
+            }
+            None => {
+                let _ = std::fs::remove_file(&path_map_path);
+            }
+        }
+        let detail = match configtest {
+            Ok(output) => String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            Err(e) => e.to_string(),
+        };
+        return Err(ApiError::BadRequest(format!(
+            "Rspamd-Konfiguration nach DKIM-Änderung ungültig, verworfen: {detail}"
+        )));
+    }
+
+    // Bewusst nicht-fatal (nur geloggt, kein Err-Return): anders als ein
+    // Configtest-Fehschlag bedeutet ein fehlgeschlagener Trigger keinen
+    // ungültigen Zustand — die Map-Dateien sind zu diesem Zeitpunkt schon
+    // korrekt geschrieben und verifiziert, es fehlt bestenfalls der
+    // sofortige Reload (etwa weil HAVENMAIL_STATE_DIR in einer
+    // Umgebung ohne installierten Havenmail-Server, z. B. CI-Tests, gar
+    // nicht existiert). Ein späterer Reload holt den Stand ohnehin nach.
+    let state_dir =
+        std::env::var("HAVENMAIL_STATE_DIR").unwrap_or_else(|_| "/var/lib/havenmail".to_string());
+    let trigger_path = std::path::PathBuf::from(format!("{state_dir}/rspamd-reload-trigger"));
+    if let Err(e) =
+        havenmail_core::trigger_file::write(&trigger_path, &chrono::Utc::now().to_rfc3339())
+    {
+        eprintln!("Warnung: Rspamd-Reload-Trigger nach DKIM-Änderung fehlgeschlagen: {e}");
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, Serialize)]

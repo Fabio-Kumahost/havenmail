@@ -21,7 +21,35 @@ fn test_database_url() -> Option<String> {
     std::env::var("HAVENMAIL_TEST_DATABASE_URL").ok()
 }
 
+/// Isoliert alle Dateisystem-Pfade, die Handler mit realen Dateisystem-
+/// Nebenwirkungen (DKIM-Schlüssel/-Maps, Rspamd-Reload-Trigger, Mailbox-
+/// Sieve-Skripte) sonst per Default unter den echten Produktionspfaden
+/// (`/etc/havenmail/...`, `/var/lib/havenmail`, `/var/mail/havenmail`)
+/// ablegen würden — auf DIESEM Entwicklungs-/Produktionsserver real
+/// passiert: mehrere Testläufe haben vor dieser Änderung Testdaten in die
+/// echten, von Rspamd gelesenen `selectors.map`/`keys.map` geschrieben
+/// (siehe Commit-Beschreibung). `std::sync::Once` statt pro Test, da
+/// `std::env::set_var` prozessweit gilt — bei parallel laufenden Tests
+/// würde ein Test mitten im Lauf eines anderen sonst den Pfad ändern.
+static ISOLATE_FS_PATHS: std::sync::Once = std::sync::Once::new();
+
+fn isolate_fs_paths() {
+    ISOLATE_FS_PATHS.call_once(|| {
+        let base = std::env::temp_dir().join(format!("havenmail-api-test-{}", std::process::id()));
+        // SAFETY: läuft exakt einmal, vor jedem Testkörper (setup() wird
+        // von jedem Test als Erstes aufgerufen) — keine gleichzeitigen
+        // set_var-Aufrufe möglich.
+        unsafe {
+            std::env::set_var("HAVENMAIL_DKIM_DIR", base.join("dkim"));
+            std::env::set_var("HAVENMAIL_STATE_DIR", base.join("state"));
+            std::env::set_var("HAVENMAIL_MAIL_DIR", base.join("mail"));
+        }
+        std::fs::create_dir_all(base.join("state")).ok();
+    });
+}
+
 async fn setup() -> Option<(Router, PgPool)> {
+    isolate_fs_paths();
     let url = test_database_url()?;
     let db = havenmail_core::db::connect(&url)
         .await
@@ -1870,4 +1898,193 @@ async fn webhook_settings_are_validated_persisted_and_super_admin_only() {
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body:?}");
+}
+
+#[tokio::test]
+async fn dkim_rotation_new_key_starts_pending_and_activation_switches_active_key() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (super_email, super_password) = bootstrap_super_admin(&db).await;
+    let super_token = login(&app, &super_email, &super_password).await;
+
+    let domain_name = format!("dkim-rot-{}.test", Uuid::new_v4());
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": domain_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let domain_id = body["id"].as_str().unwrap().to_string();
+
+    // Erster Schlüssel: wird sofort aktiv (nichts vorher zu schützen).
+    let (status, first) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_id}/dkim"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{first:?}");
+    assert_eq!(first["active"], json!(true));
+    let first_selector = first["selector"].as_str().unwrap().to_string();
+
+    // Zweiter Schlüssel (Rotation): startet PENDING, ersetzt den ersten
+    // nicht sofort — genau der Kern dieses Features.
+    let (status, second) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_id}/dkim"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{second:?}");
+    assert_eq!(second["active"], json!(false));
+    let second_selector = second["selector"].as_str().unwrap().to_string();
+    assert_ne!(first_selector, second_selector);
+
+    // dns-recommendations zeigt weiterhin den ERSTEN (noch aktiven) Selektor.
+    let (status, rec) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/domains/{domain_id}/dns-recommendations"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{rec:?}");
+    assert!(rec["dkim"]["name"]
+        .as_str()
+        .unwrap()
+        .starts_with(&first_selector));
+
+    // Liste zeigt beide Schlüssel, korrekt als aktiv/pending markiert.
+    let (status, list) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/domains/{domain_id}/dkim-keys"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{list:?}");
+    let entries = list.as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    let active_count = entries
+        .iter()
+        .filter(|e| e["active"].as_bool().unwrap())
+        .count();
+    assert_eq!(active_count, 1);
+
+    // domain_admin einer anderen Domain darf weder Liste noch Aktivierung sehen.
+    let other_domain_name = format!("dkim-rot-other-{}.test", Uuid::new_v4());
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": other_domain_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let other_domain_id = body["id"].as_str().unwrap().to_string();
+    let admin_password = "dkim-rot-domain-admin-pw!!";
+    let (status, _) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{other_domain_id}/users"),
+        Some(&super_token),
+        Some(json!({ "local_part": "admin", "password": admin_password, "role": "domain_admin" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let other_admin_token =
+        login(&app, &format!("admin@{other_domain_name}"), admin_password).await;
+    let (status, _) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/domains/{domain_id}/dkim-keys"),
+        Some(&other_admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, _) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_id}/dkim-keys/{second_selector}/activate"),
+        Some(&other_admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Aktivierung eines unbekannten Selektors -> 404.
+    let (status, _) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_id}/dkim-keys/does-not-exist/activate"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Den pending zweiten Schlüssel aktivieren -> löst den ersten ab.
+    let (status, activated) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_id}/dkim-keys/{second_selector}/activate"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{activated:?}");
+
+    let (status, list_after) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/domains/{domain_id}/dkim-keys"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{list_after:?}");
+    for entry in list_after.as_array().unwrap() {
+        let selector = entry["selector"].as_str().unwrap();
+        let active = entry["active"].as_bool().unwrap();
+        assert_eq!(
+            active,
+            selector == second_selector,
+            "nur der aktivierte Selektor {second_selector} darf jetzt aktiv sein: {entry:?}"
+        );
+    }
+
+    // dns-recommendations zeigt jetzt den NEUEN Selektor.
+    let (status, rec_after) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/domains/{domain_id}/dns-recommendations"),
+        Some(&super_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{rec_after:?}");
+    assert!(rec_after["dkim"]["name"]
+        .as_str()
+        .unwrap()
+        .starts_with(&second_selector));
+
+    // Aufräumen: geschriebene Schlüsseldateien/Maps sind reine Ableitungen
+    // ohne Nutzdaten anderer Domains — Domain-Löschung entfernt die
+    // DB-Zeilen, das Verzeichnis auf Platte separat.
+    let dkim_dir =
+        std::env::var("HAVENMAIL_DKIM_DIR").unwrap_or_else(|_| "/etc/havenmail/dkim".to_string());
+    let _ = std::fs::remove_dir_all(format!("{dkim_dir}/{domain_name}"));
 }
