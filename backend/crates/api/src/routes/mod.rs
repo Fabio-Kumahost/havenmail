@@ -136,6 +136,11 @@ pub fn router() -> Router<AppState> {
             patch(security_settings::update_virus_settings),
         )
         .route(
+            "/api/v1/system/password-policy",
+            get(security_settings::get_password_policy)
+                .patch(security_settings::update_password_policy),
+        )
+        .route(
             "/api/v1/system/mail-queue",
             get(mail_queue::list_mail_queue).delete(mail_queue::delete_all_queue),
         )

@@ -1,5 +1,6 @@
 use crate::auth_extractor::AuthUser;
 use crate::error::{ApiError, ApiResult};
+use crate::routes::security_settings;
 use crate::state::AppState;
 use axum::{
     extract::{Path, State},
@@ -41,10 +42,11 @@ pub async fn create_user(
     if !actor.can(Action::ManageDomainUsers, Some(domain_id)) {
         return Err(ApiError::Forbidden);
     }
-    if req.local_part.trim().is_empty() || req.password.len() < 12 {
-        return Err(ApiError::BadRequest(
-            "local_part erforderlich, Passwort muss mindestens 12 Zeichen haben".to_string(),
-        ));
+    let min_len = security_settings::min_password_length(&state.db).await?;
+    if req.local_part.trim().is_empty() || (req.password.len() as i32) < min_len {
+        return Err(ApiError::BadRequest(format!(
+            "local_part erforderlich, Passwort muss mindestens {min_len} Zeichen haben"
+        )));
     }
 
     let requested_role = req.role.as_deref().unwrap_or("user");
@@ -209,10 +211,11 @@ pub async fn update_user(
         return Err(ApiError::Forbidden);
     }
     if let Some(ref pw) = req.password {
-        if pw.len() < 12 {
-            return Err(ApiError::BadRequest(
-                "Passwort muss mindestens 12 Zeichen haben".to_string(),
-            ));
+        let min_len = security_settings::min_password_length(&state.db).await?;
+        if (pw.len() as i32) < min_len {
+            return Err(ApiError::BadRequest(format!(
+                "Passwort muss mindestens {min_len} Zeichen haben"
+            )));
         }
     }
 
@@ -303,10 +306,11 @@ pub async fn change_own_password(
     if !actor.can(Action::ManageOwnAccount, None) {
         return Err(ApiError::Forbidden);
     }
-    if req.new_password.len() < 12 {
-        return Err(ApiError::BadRequest(
-            "neues Passwort muss mindestens 12 Zeichen haben".to_string(),
-        ));
+    let min_len = security_settings::min_password_length(&state.db).await?;
+    if (req.new_password.len() as i32) < min_len {
+        return Err(ApiError::BadRequest(format!(
+            "neues Passwort muss mindestens {min_len} Zeichen haben"
+        )));
     }
 
     let row: PasswordHashRow = sqlx::query_as("SELECT password_hash FROM users WHERE id = $1")
@@ -439,6 +443,10 @@ pub async fn import_users(
     if !actor.can(Action::ManageDomainUsers, Some(domain_id)) {
         return Err(ApiError::Forbidden);
     }
+    // Einmal vor der Schleife lesen statt pro Zeile — die Richtlinie ändert
+    // sich nicht während ein einzelner Import läuft, und ein CSV kann
+    // hunderte Zeilen haben.
+    let min_len = security_settings::min_password_length(&state.db).await?;
 
     let mut reader = csv::ReaderBuilder::new()
         .trim(csv::Trim::All)
@@ -462,12 +470,13 @@ pub async fn import_users(
         };
 
         let local_part = row.local_part.trim().to_lowercase();
-        if local_part.is_empty() || row.password.len() < 12 {
+        if local_part.is_empty() || (row.password.len() as i32) < min_len {
             errors.push(ImportRowError {
                 row: row_num,
                 local_part,
-                message: "local_part erforderlich, Passwort muss mindestens 12 Zeichen haben"
-                    .to_string(),
+                message: format!(
+                    "local_part erforderlich, Passwort muss mindestens {min_len} Zeichen haben"
+                ),
             });
             continue;
         }

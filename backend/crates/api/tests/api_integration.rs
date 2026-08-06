@@ -1375,3 +1375,123 @@ async fn cross_domain_search_scopes_by_role() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(results.as_array().unwrap().len(), 0);
 }
+
+#[tokio::test]
+async fn password_policy_is_readable_by_any_role_and_enforced_dynamically() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (super_email, super_password) = bootstrap_super_admin(&db).await;
+    let super_token = login(&app, &super_email, &super_password).await;
+
+    let domain_name = format!("pwpolicy-{}.test", Uuid::new_v4());
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": domain_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let domain_id = body["id"].as_str().unwrap().to_string();
+    let admin_password = "pwpolicy-domain-admin-pw!!";
+    let (status, _) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_id}/users"),
+        Some(&super_token),
+        Some(json!({ "local_part": "admin", "password": admin_password, "role": "domain_admin" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let admin_token = login(&app, &format!("admin@{domain_name}"), admin_password).await;
+
+    // GET ist für jede eingeloggte Rolle erreichbar (kein ManageSystemSettings-
+    // Gate) — ein domain_admin braucht die Mindestlänge, um sie im eigenen
+    // Postfach-Anlegen-Formular anzuzeigen.
+    let (status, policy) = call(
+        &app,
+        "GET",
+        "/api/v1/system/password-policy",
+        Some(&admin_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{policy:?}");
+    assert!(policy["min_password_length"].as_i64().is_some());
+
+    // domain_admin darf die Richtlinie nicht ändern.
+    let (status, _) = call(
+        &app,
+        "PATCH",
+        "/api/v1/system/password-policy",
+        Some(&admin_token),
+        Some(json!({ "min_password_length": 20 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // Werte unter 8 werden abgelehnt (hartes Minimum, siehe Migration 0010).
+    let (status, _) = call(
+        &app,
+        "PATCH",
+        "/api/v1/system/password-policy",
+        Some(&super_token),
+        Some(json!({ "min_password_length": 7 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // super_admin hebt die Mindestlänge auf 15 an. Bewusst nur +3 gegenüber
+    // dem Default 12 und weit unter den kürzesten in anderen Tests dieser
+    // Datei verwendeten Passwörtern (>= 16 Zeichen) — Tests laufen parallel
+    // gegen dieselbe Singleton-Zeile, ein zu aggressiver Wert würde
+    // gleichzeitig laufende Postfach-Anlagen anderer Tests brechen.
+    let (status, updated) = call(
+        &app,
+        "PATCH",
+        "/api/v1/system/password-policy",
+        Some(&super_token),
+        Some(json!({ "min_password_length": 15 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{updated:?}");
+    assert_eq!(updated["min_password_length"], json!(15));
+
+    // Ein 12-Zeichen-Passwort (nach dem alten Default gültig) wird jetzt abgelehnt...
+    let (status, body) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_id}/users"),
+        Some(&admin_token),
+        Some(json!({ "local_part": "toosecret", "password": "short1234567" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body:?}");
+
+    // ...ein 15-Zeichen-Passwort wird weiterhin akzeptiert.
+    let (status, body) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_id}/users"),
+        Some(&admin_token),
+        Some(json!({ "local_part": "longenough", "password": "exactly15chars!" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+
+    // Aufräumen: Singleton-Zeile zurücksetzen, damit andere/künftige Tests
+    // wieder vom Migrations-Default ausgehen können (gleiches Muster wie bei
+    // branding_get_is_public_and_patch_is_super_admin_only).
+    let (status, _) = call(
+        &app,
+        "PATCH",
+        "/api/v1/system/password-policy",
+        Some(&super_token),
+        Some(json!({ "min_password_length": 12 })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}

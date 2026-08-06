@@ -17,6 +17,14 @@ export default function SpamSettings() {
   const [success, setSuccess] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
+  // Passwort-Richtlinie ist ein eigenes Feld auf derselben security_settings-
+  // Zeile, aber ein eigener PATCH-Endpunkt (kein Rspamd-Reload nötig) — daher
+  // eigener Form-State/Submit statt Mitschleppen im Score-Formular oben.
+  const [minPasswordLength, setMinPasswordLength] = useState(12)
+  const [pwError, setPwError] = useState<string | null>(null)
+  const [pwSuccess, setPwSuccess] = useState(false)
+  const [pwSubmitting, setPwSubmitting] = useState(false)
+
   useEffect(() => {
     api.securitySettings
       .get()
@@ -31,6 +39,7 @@ export default function SpamSettings() {
           ratelimit_per_hour: s.ratelimit_per_hour,
           ratelimit_burst: s.ratelimit_burst,
         })
+        setMinPasswordLength(s.min_password_length)
       })
       .catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 403) {
@@ -54,6 +63,22 @@ export default function SpamSettings() {
       setError(err instanceof ApiError ? err.message : 'Speichern fehlgeschlagen')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function onSubmitPasswordPolicy(e: FormEvent) {
+    e.preventDefault()
+    setPwError(null)
+    setPwSuccess(false)
+    setPwSubmitting(true)
+    try {
+      const updated = await api.securitySettings.updatePasswordPolicy(minPasswordLength)
+      setSettings(updated)
+      setPwSuccess(true)
+    } catch (err) {
+      setPwError(err instanceof ApiError ? err.message : 'Speichern fehlgeschlagen')
+    } finally {
+      setPwSubmitting(false)
     }
   }
 
@@ -160,6 +185,37 @@ export default function SpamSettings() {
             {success && <p className="badge badge-ready">Gespeichert und angewendet</p>}
             <button type="submit" disabled={submitting}>
               {submitting ? 'Speichere…' : 'Speichern'}
+            </button>
+          </form>
+        </div>
+      )}
+      {!forbidden && settings && (
+        <div className="card">
+          <h2>Passwort-Richtlinie</h2>
+          <p className="muted">
+            Gilt für alle Postfächer domänenübergreifend — Selbstbedienung und Admin-Formulare
+            lehnen kürzere Passwörter serverseitig ab, unabhängig vom jeweiligen Formular.
+          </p>
+          <form onSubmit={onSubmitPasswordPolicy}>
+            <label>
+              Mindestlänge
+              <input
+                type="number"
+                min={8}
+                value={minPasswordLength}
+                onChange={(e) => setMinPasswordLength(Number(e.target.value))}
+                required
+              />
+              <small>Mindestens 8 Zeichen — auch als hartes Limit in der Datenbank verankert.</small>
+            </label>
+            {pwError && (
+              <p className="error" role="alert">
+                {pwError}
+              </p>
+            )}
+            {pwSuccess && <p className="badge badge-ready">Gespeichert</p>}
+            <button type="submit" disabled={pwSubmitting}>
+              {pwSubmitting ? 'Speichere…' : 'Speichern'}
             </button>
           </form>
         </div>

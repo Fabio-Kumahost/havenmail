@@ -23,6 +23,19 @@ function PasswordSection() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  // Server ist die eigentliche Durchsetzungsstelle (routes/users.rs liest
+  // die Richtlinie live aus der DB) — hier nur für UX, damit das
+  // `minLength`-Attribut nicht mehr "12" hart codiert, sondern die
+  // tatsächlich vom super_admin konfigurierte Mindestlänge widerspiegelt.
+  // 12 bleibt der Fallback, solange die Anfrage noch lädt.
+  const [minLength, setMinLength] = useState(12)
+
+  useEffect(() => {
+    api.securitySettings
+      .passwordPolicy()
+      .then((p) => setMinLength(p.min_password_length))
+      .catch(() => {})
+  }, [])
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -73,10 +86,13 @@ function PasswordSection() {
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             required
-            minLength={12}
+            minLength={minLength}
             autoComplete="new-password"
           />
         </label>
+        <p className="muted" style={{ margin: '-0.5rem 0 0' }}>
+          Mindestens {minLength} Zeichen.
+        </p>
         <label>
           Neues Passwort bestätigen
           <input
@@ -84,7 +100,7 @@ function PasswordSection() {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             required
-            minLength={12}
+            minLength={minLength}
             autoComplete="new-password"
           />
         </label>

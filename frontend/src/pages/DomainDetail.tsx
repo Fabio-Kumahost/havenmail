@@ -11,6 +11,25 @@ import {
   ApiError,
 } from '../api'
 
+/**
+ * Aktuelle Mindestpasswortlänge (super_admin-konfigurierbar unter
+ * /password-policy) — von den beiden Passwort-Formularen dieser Seite
+ * geteilt (Passwort ändern in UserRow, Neuanlage in UserForm), damit sie
+ * nicht synchron zwei fast identische Kopien pflegen. Fallback 12, solange
+ * die Anfrage noch lädt oder fehlschlägt — Server bleibt ohnehin die
+ * eigentliche Durchsetzungsstelle.
+ */
+function usePasswordMinLength(): number {
+  const [minLength, setMinLength] = useState(12)
+  useEffect(() => {
+    api.securitySettings
+      .passwordPolicy()
+      .then((p) => setMinLength(p.min_password_length))
+      .catch(() => {})
+  }, [])
+  return minLength
+}
+
 function formatBytes(bytes: number | null | undefined): string {
   if (bytes == null) return '—'
   if (bytes < 1024) return `${bytes} B`
@@ -159,6 +178,7 @@ function UserRow({
   const [changingPassword, setChangingPassword] = useState(false)
   const [newPassword, setNewPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const minLength = usePasswordMinLength()
 
   async function onSavePassword(e: FormEvent) {
     e.preventDefault()
@@ -210,11 +230,11 @@ function UserRow({
             <form className="inline-form" onSubmit={onSavePassword} style={{ margin: 0 }}>
               <input
                 type="password"
-                placeholder="Neues Passwort (min. 12 Zeichen)"
+                placeholder={`Neues Passwort (min. ${minLength} Zeichen)`}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 required
-                minLength={12}
+                minLength={minLength}
                 autoFocus
               />
               <button type="submit" disabled={submitting}>
@@ -239,6 +259,7 @@ function UserForm({
 }) {
   const [localPart, setLocalPart] = useState('')
   const [password, setPassword] = useState('')
+  const minLength = usePasswordMinLength()
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
@@ -257,11 +278,11 @@ function UserForm({
       <input placeholder="postfach" value={localPart} onChange={(e) => setLocalPart(e.target.value)} required />
       <input
         type="password"
-        placeholder="Passwort (min. 12 Zeichen)"
+        placeholder={`Passwort (min. ${minLength} Zeichen)`}
         value={password}
         onChange={(e) => setPassword(e.target.value)}
         required
-        minLength={12}
+        minLength={minLength}
       />
       <button type="submit">Benutzer anlegen</button>
     </form>

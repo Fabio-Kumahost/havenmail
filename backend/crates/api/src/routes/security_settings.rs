@@ -35,12 +35,49 @@ pub struct SecuritySettings {
     pub antivirus_enabled: bool,
     pub antivirus_action: String,
     pub antivirus_max_size_mb: i32,
+    pub min_password_length: i32,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 const SELECT_COLUMNS: &str = "spam_greylist_score, spam_add_header_score, spam_reject_score, \
      dmarc_enabled, ratelimit_enabled, ratelimit_per_hour, ratelimit_burst, \
-     antivirus_enabled, antivirus_action, antivirus_max_size_mb, updated_at";
+     antivirus_enabled, antivirus_action, antivirus_max_size_mb, min_password_length, updated_at";
+
+/// Aktuelle Mindestpasswortlänge — ersetzt die vier vormals hart codierten
+/// `len() < 12`-Prüfungen in `routes/users.rs`. Ein einzelner `SELECT`
+/// statt geteiltem In-Memory-Zustand, da Passwort-Änderungen nicht
+/// performancekritisch sind und eine geänderte Richtlinie so sofort greift
+/// (kein API-Neustart, kein Cache-Invalidieren nötig).
+pub async fn min_password_length(pool: &sqlx::PgPool) -> ApiResult<i32> {
+    let row: (i32,) =
+        sqlx::query_as("SELECT min_password_length FROM security_settings WHERE id = 1")
+            .fetch_one(pool)
+            .await?;
+    Ok(row.0)
+}
+
+#[derive(Debug, Serialize)]
+pub struct PasswordPolicy {
+    pub min_password_length: i32,
+}
+
+/// Anders als `get_settings` bewusst OHNE `ManageSystemSettings`-Gate —
+/// jede eingeloggte Rolle setzt irgendwo ein Passwort (Selbstbedienung in
+/// Account.tsx, Admin-Formulare in DomainDetail.tsx) und muss dafür die
+/// aktuelle Mindestlänge kennen, um sie im Formular clientseitig
+/// anzuzeigen/vorzuvalidieren. Das ist reine UX — die eigentliche
+/// Durchsetzung passiert serverseitig in `routes/users.rs` über
+/// `min_password_length()` oben, unabhängig davon, ob dieser Endpunkt
+/// überhaupt aufgerufen wurde. Eine einzelne Ganzzahl ist zudem keine
+/// sensible Information.
+pub async fn get_password_policy(
+    State(state): State<AppState>,
+    AuthUser(_actor): AuthUser,
+) -> ApiResult<Json<PasswordPolicy>> {
+    Ok(Json(PasswordPolicy {
+        min_password_length: min_password_length(&state.db).await?,
+    }))
+}
 
 async fn fetch_settings(pool: &sqlx::PgPool) -> ApiResult<SecuritySettings> {
     Ok(sqlx::query_as(&format!(
@@ -198,6 +235,60 @@ pub async fn update_virus_settings(
         &actor,
         &headers,
         "security_settings.update_virus",
+        "security_settings",
+        None,
+        serde_json::to_value(&current).ok(),
+        serde_json::to_value(&updated).ok(),
+    )
+    .await;
+
+    Ok(Json(updated))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdatePasswordPolicyRequest {
+    pub min_password_length: i32,
+}
+
+/// Anders als die Spam-/Virus-Settings hat die Passwort-Richtlinie keine
+/// Entsprechung in einer Rspamd-Konfigurationsdatei — reines DB-Feld, das
+/// bei jeder Passwort-Prüfung frisch gelesen wird (`min_password_length()`
+/// oben), daher hier kein `apply_to_rspamd`-Aufruf nötig.
+pub async fn update_password_policy(
+    State(state): State<AppState>,
+    AuthUser(actor): AuthUser,
+    headers: HeaderMap,
+    Json(req): Json<UpdatePasswordPolicyRequest>,
+) -> ApiResult<Json<SecuritySettings>> {
+    if !actor.can(Action::ManageSystemSettings, None) {
+        return Err(ApiError::Forbidden);
+    }
+    if req.min_password_length < 8 {
+        return Err(ApiError::BadRequest(
+            "min_password_length muss mindestens 8 sein".to_string(),
+        ));
+    }
+    let current = fetch_settings(&state.db).await?;
+
+    let updated: SecuritySettings = sqlx::query_as(&format!(
+        r#"
+        UPDATE security_settings SET
+            min_password_length = $1,
+            updated_at = now(), updated_by = $2
+        WHERE id = 1
+        RETURNING {SELECT_COLUMNS}
+        "#
+    ))
+    .bind(req.min_password_length)
+    .bind(actor.user_id)
+    .fetch_one(&state.db)
+    .await?;
+
+    crate::audit_log::log(
+        &state,
+        &actor,
+        &headers,
+        "security_settings.update_password_policy",
         "security_settings",
         None,
         serde_json::to_value(&current).ok(),

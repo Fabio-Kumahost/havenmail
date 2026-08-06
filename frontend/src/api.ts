@@ -245,6 +245,7 @@ export interface SecuritySettings {
   antivirus_enabled: boolean
   antivirus_action: 'reject' | 'add_header' | 'no_action'
   antivirus_max_size_mb: number
+  min_password_length: number
   updated_at: string
 }
 
@@ -456,6 +457,17 @@ export const api = {
       request<SecuritySettings>('PATCH', '/api/v1/system/spam-settings', patch),
     updateVirus: (patch: Partial<SecuritySettings>) =>
       request<SecuritySettings>('PATCH', '/api/v1/system/virus-settings', patch),
+    updatePasswordPolicy: (minPasswordLength: number) =>
+      request<SecuritySettings>('PATCH', '/api/v1/system/password-policy', {
+        min_password_length: minPasswordLength,
+      }),
+    // Für jede Rolle aufrufbar (kein ManageSystemSettings-Gate im Backend) —
+    // liefert nur die Zahl, damit Passwort-Formulare (Account.tsx,
+    // DomainDetail.tsx) die aktuelle Richtlinie clientseitig anzeigen
+    // können, auch für Rollen, die securitySettings.get() nicht aufrufen
+    // dürfen.
+    passwordPolicy: () =>
+      request<{ min_password_length: number }>('GET', '/api/v1/system/password-policy'),
   },
   metrics: {
     range: (range: '7d' | '30d' = '7d') =>
