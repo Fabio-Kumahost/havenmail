@@ -16,6 +16,7 @@ pub mod sessions;
 pub mod system;
 pub mod totp;
 pub mod users;
+pub mod vacation;
 
 use crate::state::AppState;
 use axum::{
@@ -73,6 +74,14 @@ pub fn router() -> Router<AppState> {
         .route(
             "/api/v1/users/me/password",
             patch(users::change_own_password),
+        )
+        .route(
+            "/api/v1/users/me/vacation",
+            get(vacation::get_own_vacation).put(vacation::update_own_vacation),
+        )
+        .route(
+            "/api/v1/users/:user_id/vacation",
+            get(vacation::get_vacation).put(vacation::update_vacation),
         )
         .route("/api/v1/users/me/totp", get(totp::get_status))
         .route("/api/v1/users/me/totp/enroll", post(totp::enroll))

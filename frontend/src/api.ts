@@ -236,6 +236,15 @@ export interface BrandingSettings {
   accent_color: string | null
 }
 
+export interface VacationResponder {
+  enabled: boolean
+  subject: string
+  message: string
+  start_date: string | null
+  end_date: string | null
+  updated_at: string
+}
+
 export interface SecuritySettings {
   spam_greylist_score: number
   spam_add_header_score: number
@@ -435,6 +444,14 @@ export const api = {
   account: {
     changePassword: (current_password: string, new_password: string) =>
       request<User>('PATCH', '/api/v1/users/me/password', { current_password, new_password }),
+    getVacation: () => request<VacationResponder>('GET', '/api/v1/users/me/vacation'),
+    updateVacation: (patch: {
+      enabled: boolean
+      subject: string
+      message: string
+      start_date: string | null
+      end_date: string | null
+    }) => request<VacationResponder>('PUT', '/api/v1/users/me/vacation', patch),
   },
   totp: {
     status: () => request<TotpStatus>('GET', '/api/v1/users/me/totp'),

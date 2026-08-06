@@ -18,11 +18,18 @@ RestartSec=2
 # echte Rspamd-Konfigurationsdateien schreiben können, siehe
 # routes/security_settings.rs. Jede Änderung wird vor dem Anwenden per
 # `rspamadm configtest` verifiziert.
+# /var/mail/havenmail ebenso bewusst gelockert: die Abwesenheitsnotiz
+# (routes/vacation.rs) schreibt das `.dovecot.sieve`-Skript direkt ins
+# Mailbox-Home des jeweiligen Postfachs und kompiliert es per `sievec`
+# (Sicherheitsnetz: Compile-Fehler verwirft die Änderung, siehe dortiger
+# Kommentar). Derselbe Systembenutzer (uid 5000) besitzt diese
+# Verzeichnisse bereits regulär (siehe scripts/lib/common.sh), die
+# Lockerung hier ist rein die ProtectSystem=strict-Bind-Mount-Ebene.
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/var/lib/havenmail /var/log/havenmail /etc/rspamd/local.d
+ReadWritePaths=/var/lib/havenmail /var/log/havenmail /etc/rspamd/local.d /var/mail/havenmail
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

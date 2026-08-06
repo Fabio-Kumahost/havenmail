@@ -1586,3 +1586,156 @@ async fn ratelimit_override_is_scoped_and_validated() {
     assert_eq!(body["ratelimit_per_hour_override"], Value::Null);
     assert_eq!(body["ratelimit_burst_override"], Value::Null);
 }
+
+/// Der Erfolgspfad bei `enabled = true` schreibt echte Dateien nach
+/// `/var/mail/havenmail/...` und ruft `sievec` auf, was in der CI-Umgebung
+/// (kein Dovecot/Pigeonhole installiert) fehlschlagen würde — daher nur
+/// RBAC/Validierung sowie der `enabled = false`-Pfad (löscht nur
+/// evtl. vorhandene Dateien, toleriert deren Fehlen) hier getestet. Der
+/// `enabled = true`-Pfad wurde live gegen den echten Server verifiziert
+/// (siehe Commit-Beschreibung): echte SMTP-Zustellung löste eine echte
+/// Vacation-Antwort aus, die im Ziel-Postfach ankam.
+#[tokio::test]
+async fn vacation_responder_is_scoped_validated_and_self_service_works() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (super_email, super_password) = bootstrap_super_admin(&db).await;
+    let super_token = login(&app, &super_email, &super_password).await;
+
+    let domain_a_name = format!("vac-a-{}.test", Uuid::new_v4());
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": domain_a_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let domain_a_id = body["id"].as_str().unwrap().to_string();
+
+    let user_password = "vacation-user-secret-pw!!";
+    let (status, body) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_a_id}/users"),
+        Some(&super_token),
+        Some(json!({ "local_part": "alice", "password": user_password })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let user_id = body["id"].as_str().unwrap().to_string();
+    let user_token = login(&app, &format!("alice@{domain_a_name}"), user_password).await;
+
+    // GET ohne vorherigen PUT liefert deaktivierte Defaults, kein 404.
+    let (status, body) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/users/{user_id}/vacation"),
+        Some(&user_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    assert_eq!(body["enabled"], json!(false));
+
+    // Domain B / fremder domain_admin darf nicht zugreifen.
+    let domain_b_name = format!("vac-b-{}.test", Uuid::new_v4());
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": domain_b_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let domain_b_id = body["id"].as_str().unwrap().to_string();
+    let admin_password = "vacation-domain-admin-pw!!";
+    let (status, _) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_b_id}/users"),
+        Some(&super_token),
+        Some(json!({ "local_part": "admin", "password": admin_password, "role": "domain_admin" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let admin_b_token = login(&app, &format!("admin@{domain_b_name}"), admin_password).await;
+    let (status, _) = call(
+        &app,
+        "GET",
+        &format!("/api/v1/users/{user_id}/vacation"),
+        Some(&admin_b_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Validierung: leerer Betreff, zu lange Nachricht, Enddatum vor Startdatum.
+    let (status, _) = call(
+        &app,
+        "PUT",
+        &format!("/api/v1/users/{user_id}/vacation"),
+        Some(&user_token),
+        Some(json!({ "enabled": false, "subject": "", "message": "x", "start_date": null, "end_date": null })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let too_long = "x".repeat(8001);
+    let (status, _) = call(
+        &app,
+        "PUT",
+        &format!("/api/v1/users/{user_id}/vacation"),
+        Some(&user_token),
+        Some(json!({ "enabled": false, "subject": "S", "message": too_long, "start_date": null, "end_date": null })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    let (status, _) = call(
+        &app,
+        "PUT",
+        &format!("/api/v1/users/{user_id}/vacation"),
+        Some(&user_token),
+        Some(json!({
+            "enabled": false, "subject": "S", "message": "M",
+            "start_date": "2026-06-01", "end_date": "2026-01-01"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Erfolgspfad mit enabled=false (löscht nur evtl. vorhandene Dateien,
+    // kein sievec-Aufruf, daher CI-sicher) über die Selbstbedienungsroute
+    // /users/me/vacation — löst dieselbe Logik ohne User-ID im Pfad aus.
+    let (status, body) = call(
+        &app,
+        "PUT",
+        "/api/v1/users/me/vacation",
+        Some(&user_token),
+        Some(json!({
+            "enabled": false, "subject": "Abwesend", "message": "Testtext",
+            "start_date": null, "end_date": null
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    assert_eq!(body["subject"], json!("Abwesend"));
+
+    let (status, body) = call(
+        &app,
+        "GET",
+        "/api/v1/users/me/vacation",
+        Some(&user_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    assert_eq!(body["subject"], json!("Abwesend"));
+    assert_eq!(body["message"], json!("Testtext"));
+    assert_eq!(body["enabled"], json!(false));
+}

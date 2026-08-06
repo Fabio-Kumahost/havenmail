@@ -23,6 +23,7 @@ pub mod rbl_check;
 pub mod rspamd_client;
 pub mod secrets_crypto;
 pub mod service_status;
+pub mod sieve_render;
 pub mod tls_status;
 pub mod trigger_file;
 

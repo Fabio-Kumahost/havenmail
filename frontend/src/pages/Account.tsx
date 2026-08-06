@@ -9,9 +9,124 @@ export default function Account() {
     <div>
       <h1>Mein Konto</h1>
       <PasswordSection />
+      <VacationSection />
       <TotpSection />
       <SessionsSection />
       <ApiTokensSection />
+    </div>
+  )
+}
+
+/**
+ * Abwesenheitsnotiz (Sieve-Autoresponder, siehe routes/vacation.rs) —
+ * reine Selbstbedienung über /users/me/vacation, kein :user_id im Pfad
+ * (Frontend kennt die eigene User-ID sonst nicht). Datumsfelder leer =
+ * kein Start-/Endzeitraum (Notiz gilt zeitlich unbegrenzt, solange aktiv).
+ */
+function VacationSection() {
+  const [enabled, setEnabled] = useState(false)
+  const [subject, setSubject] = useState('')
+  const [message, setMessage] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    api.account
+      .getVacation()
+      .then((v) => {
+        setEnabled(v.enabled)
+        setSubject(v.subject)
+        setMessage(v.message)
+        setStartDate(v.start_date ?? '')
+        setEndDate(v.end_date ?? '')
+      })
+      .catch(() => setError('Abwesenheitsnotiz konnte nicht geladen werden.'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  async function onSubmit(e: FormEvent) {
+    e.preventDefault()
+    setError(null)
+    setSuccess(false)
+    setSubmitting(true)
+    try {
+      await api.account.updateVacation({
+        enabled,
+        subject,
+        message,
+        start_date: startDate.trim() === '' ? null : startDate,
+        end_date: endDate.trim() === '' ? null : endDate,
+      })
+      setSuccess(true)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Speichern fehlgeschlagen')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2>Abwesenheitsnotiz</h2>
+      <p className="muted">
+        Beantwortet eingehende Mail automatisch, höchstens einmal pro Tag je Absender — leer
+        gelassene Datumsfelder bedeuten "zeitlich unbegrenzt, solange aktiv".
+      </p>
+      {loading && <p className="muted">Lädt…</p>}
+      {!loading && (
+        <form
+          className="inline-form"
+          onSubmit={onSubmit}
+          style={{ flexDirection: 'column', alignItems: 'stretch', maxWidth: '32rem' }}
+        >
+          <label className="checkbox-field">
+            <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+            Aktiv
+          </label>
+          <label>
+            Betreff
+            <input
+              type="text"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              required
+              maxLength={200}
+            />
+          </label>
+          <label>
+            Nachricht
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={5}
+              maxLength={8000}
+            />
+          </label>
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <label style={{ flex: 1 }}>
+              Von (optional)
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            </label>
+            <label style={{ flex: 1 }}>
+              Bis (optional)
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+            </label>
+          </div>
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+          {success && <p className="badge badge-ready">Gespeichert und angewendet</p>}
+          <button type="submit" disabled={submitting}>
+            {submitting ? 'Speichere…' : 'Speichern'}
+          </button>
+        </form>
+      )}
     </div>
   )
 }

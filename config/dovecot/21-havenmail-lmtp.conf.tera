@@ -5,6 +5,15 @@
 # Default-Werten — real beim Testen genau so aufgetreten.
 
 protocol lmtp {
+  # Sieve-Plugin aktivieren (Debians Default hat es auskommentiert) —
+  # Voraussetzung für die Abwesenheitsnotiz (siehe routes/vacation.rs):
+  # ohne dieses Flag liest Dovecot bei der Zustellung gar kein Sieve-Skript,
+  # egal ob eins unter ~/.dovecot.sieve liegt. Kein `sieve`/`sieve_script`-
+  # Setting nötig — Pigeonholes eingebauter Default sucht bereits dort.
+  mail_plugins {
+    sieve = yes
+  }
+
   # Quota schon bei RCPT TO prüfen (sauberer 552-SMTP-Reject statt
   # Annehmen und erst beim Sichern der Nachricht scheitern).
   lmtp_rcpt_check_quota = yes

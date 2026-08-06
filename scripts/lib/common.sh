@@ -86,6 +86,15 @@ havenmail_ensure_system_user() {
   if getent group systemd-journal >/dev/null 2>&1; then
     usermod -aG systemd-journal "$HAVENMAIL_SYSTEM_USER"
   fi
+  # `sievec` (Kompilieren der Abwesenheitsnotiz-Skripte, siehe
+  # routes/vacation.rs) lädt beim Start intern die volle Dovecot-Config
+  # via doveconf, um Sieve-Erweiterungen aufzulösen — darunter
+  # 10-auth-sql.conf, das die Datenbank-Zugangsdaten enthält und deshalb
+  # nur root:dovecot 0640 lesbar ist. Ohne Gruppenmitgliedschaft schlägt
+  # jeder Compile-Versuch mit "Permission denied" fehl (live geprüft).
+  if getent group dovecot >/dev/null 2>&1; then
+    usermod -aG dovecot "$HAVENMAIL_SYSTEM_USER"
+  fi
 }
 
 # Liest einen Wert aus der Env-Datei, falls vorhanden (für Idempotenz: bei
