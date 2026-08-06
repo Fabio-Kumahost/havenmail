@@ -1083,3 +1083,96 @@ async fn domains_overview_aggregates_user_counts_and_is_super_admin_only() {
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn branding_get_is_public_and_patch_is_super_admin_only() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (super_email, super_password) = bootstrap_super_admin(&db).await;
+    let super_token = login(&app, &super_email, &super_password).await;
+
+    // GET ohne jedes Token (Login-Seite braucht das vor Authentifizierung).
+    let (status, initial) = call(&app, "GET", "/api/v1/system/branding", None, None).await;
+    assert_eq!(status, StatusCode::OK, "{initial:?}");
+    assert_eq!(initial["product_name"], json!("Havenmail"));
+
+    // Ungültige Logo-URL wird abgelehnt.
+    let (status, _) = call(
+        &app,
+        "PATCH",
+        "/api/v1/system/branding",
+        Some(&super_token),
+        Some(json!({ "product_name": "Acme Mail", "logo_url": "javascript:alert(1)" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Gültige Änderung durch super_admin.
+    let (status, updated) = call(
+        &app,
+        "PATCH",
+        "/api/v1/system/branding",
+        Some(&super_token),
+        Some(json!({
+            "product_name": "Acme Mail",
+            "logo_url": "https://example.org/logo.png",
+            "accent_color": "#123456"
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{updated:?}");
+    assert_eq!(updated["product_name"], json!("Acme Mail"));
+    assert_eq!(updated["logo_url"], json!("https://example.org/logo.png"));
+    assert_eq!(updated["accent_color"], json!("#123456"));
+
+    // GET (weiterhin ohne Token) zeigt die neuen Werte.
+    let (_, after_patch) = call(&app, "GET", "/api/v1/system/branding", None, None).await;
+    assert_eq!(after_patch["product_name"], json!("Acme Mail"));
+
+    // domain_admin darf nicht ändern.
+    let domain_name = format!("branding-{}.test", Uuid::new_v4());
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/domains",
+        Some(&super_token),
+        Some(json!({ "name": domain_name })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    let domain_id = body["id"].as_str().unwrap().to_string();
+    let admin_password = "domain-admin-secret-pw!!";
+    let (status, _) = call(
+        &app,
+        "POST",
+        &format!("/api/v1/domains/{domain_id}/users"),
+        Some(&super_token),
+        Some(json!({ "local_part": "admin", "password": admin_password, "role": "domain_admin" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let admin_token = login(&app, &format!("admin@{domain_name}"), admin_password).await;
+    let (status, _) = call(
+        &app,
+        "PATCH",
+        "/api/v1/system/branding",
+        Some(&admin_token),
+        Some(json!({ "product_name": "Sollte nicht klappen" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+
+    // Aufräumen: Singleton-Zeile zurücksetzen, damit andere/künftige Tests
+    // wieder von den Ist-Zustand-Defaults ausgehen können.
+    let (status, _) = call(
+        &app,
+        "PATCH",
+        "/api/v1/system/branding",
+        Some(&super_token),
+        Some(json!({ "product_name": "Havenmail" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}

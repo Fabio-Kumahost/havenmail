@@ -13,6 +13,7 @@
  */
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './AuthContext'
+import { BrandingProvider } from './BrandingContext'
 import RequireAuth from './pages/RequireAuth'
 import Layout from './pages/Layout'
 import Login from './pages/Login'
@@ -26,33 +27,37 @@ import SpamSettings from './pages/SpamSettings'
 import VirusSettings from './pages/VirusSettings'
 import Fail2Ban from './pages/Fail2Ban'
 import Backup from './pages/Backup'
+import Branding from './pages/Branding'
 import Account from './pages/Account'
 import './App.css'
 
 function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route element={<RequireAuth />}>
-            <Route element={<Layout />}>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/overview" element={<Overview />} />
-              <Route path="/domains" element={<Domains />} />
-              <Route path="/domains/:domainId" element={<DomainDetail />} />
-              <Route path="/spam-settings" element={<SpamSettings />} />
-              <Route path="/virus-settings" element={<VirusSettings />} />
-              <Route path="/fail2ban" element={<Fail2Ban />} />
-              <Route path="/backup" element={<Backup />} />
-              <Route path="/system" element={<System />} />
-              <Route path="/audit-log" element={<AuditLog />} />
-              <Route path="/account" element={<Account />} />
+    <BrandingProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route element={<RequireAuth />}>
+              <Route element={<Layout />}>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/overview" element={<Overview />} />
+                <Route path="/domains" element={<Domains />} />
+                <Route path="/domains/:domainId" element={<DomainDetail />} />
+                <Route path="/spam-settings" element={<SpamSettings />} />
+                <Route path="/virus-settings" element={<VirusSettings />} />
+                <Route path="/fail2ban" element={<Fail2Ban />} />
+                <Route path="/backup" element={<Backup />} />
+                <Route path="/branding" element={<Branding />} />
+                <Route path="/system" element={<System />} />
+                <Route path="/audit-log" element={<AuditLog />} />
+                <Route path="/account" element={<Account />} />
+              </Route>
             </Route>
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </BrandingProvider>
   )
 }
 

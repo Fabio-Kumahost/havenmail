@@ -3,6 +3,7 @@ pub mod api_tokens;
 pub mod audit;
 pub mod auth;
 pub mod backup;
+pub mod branding;
 pub mod distribution_lists;
 pub mod dns;
 pub mod domains;
@@ -26,6 +27,10 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/auth/login", post(auth::login))
         .route("/api/v1/auth/refresh", post(auth::refresh))
         .route("/api/v1/auth/logout", post(auth::logout))
+        .route(
+            "/api/v1/system/branding",
+            get(branding::get_branding).patch(branding::update_branding),
+        )
         .route(
             "/api/v1/domains",
             post(domains::create_domain).get(domains::list_domains),

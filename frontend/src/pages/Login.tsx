@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth, ApiError } from '../AuthContext'
+import { useBranding } from '../BrandingContext'
 
 export default function Login() {
   const { login } = useAuth()
+  const { branding } = useBranding()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -37,7 +39,14 @@ export default function Login() {
   return (
     <div className="auth-screen">
       <form className="auth-card" onSubmit={onSubmit}>
-        <h1>Havenmail Admin</h1>
+        {branding.logo_url && (
+          <img
+            src={branding.logo_url}
+            alt={branding.product_name}
+            style={{ maxHeight: '3rem', maxWidth: '100%', marginBottom: '0.5rem' }}
+          />
+        )}
+        <h1>{branding.product_name} Admin</h1>
         <label>
           E-Mail
           <input

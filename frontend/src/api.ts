@@ -223,6 +223,12 @@ export interface AuditLogEntry {
   created_at: string
 }
 
+export interface BrandingSettings {
+  product_name: string
+  logo_url: string | null
+  accent_color: string | null
+}
+
 export interface SecuritySettings {
   spam_greylist_score: number
   spam_add_header_score: number
@@ -417,6 +423,11 @@ export const api = {
       }),
     revoke: (id: string) =>
       request<{ status: string }>('DELETE', `/api/v1/users/me/api-tokens/${id}`),
+  },
+  branding: {
+    get: () => request<BrandingSettings>('GET', '/api/v1/system/branding'),
+    update: (settings: BrandingSettings) =>
+      request<BrandingSettings>('PATCH', '/api/v1/system/branding', settings),
   },
   securitySettings: {
     get: () => request<SecuritySettings>('GET', '/api/v1/system/security-settings'),

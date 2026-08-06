@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
+import { useBranding } from '../BrandingContext'
 
 const ICONS = {
   dashboard: (
@@ -58,6 +59,12 @@ const ICONS = {
       <path d="M4.5 20c1.4-3.6 4.4-5.5 7.5-5.5s6.1 1.9 7.5 5.5" />
     </svg>
   ),
+  branding: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M4 4h9l7 7-9 9-7-7V4Z" />
+      <circle cx="9" cy="9" r="1.3" fill="currentColor" stroke="none" />
+    </svg>
+  ),
   shield: (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <path d="M12 3 5 6v5c0 5 3 8.5 7 10 4-1.5 7-5 7-10V6l-7-3Z" />
@@ -81,6 +88,7 @@ const ICONS = {
 
 export default function Layout() {
   const { logout } = useAuth()
+  const { branding } = useBranding()
   const navigate = useNavigate()
 
   function onLogout() {
@@ -91,7 +99,12 @@ export default function Layout() {
   return (
     <div className="app-shell">
       <nav className="sidebar" aria-label="Hauptnavigation">
-        <div className="brand">Havenmail</div>
+        <div className="brand" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {branding.logo_url && (
+            <img src={branding.logo_url} alt="" style={{ height: '1.5rem', width: 'auto' }} />
+          )}
+          <span>{branding.product_name}</span>
+        </div>
         <NavLink to="/" end>
           {ICONS.dashboard}
           <span>Dashboard</span>
@@ -127,6 +140,10 @@ export default function Layout() {
         <NavLink to="/audit-log">
           {ICONS.audit}
           <span>Audit-Log</span>
+        </NavLink>
+        <NavLink to="/branding">
+          {ICONS.branding}
+          <span>Branding</span>
         </NavLink>
         <NavLink to="/account" className="sidebar-account">
           {ICONS.account}
