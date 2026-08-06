@@ -1,0 +1,103 @@
+/**
+ * Havenmail "Gaming/Futuristic"-Thema — zusätzliche Regeln (Glow-Effekte,
+ * Hintergrundtextur, Scrollbalken), die reine Farbvariablen (siehe
+ * _variables.less) nicht abdecken. Bewusst KEIN externer Font-Import
+ * (Datenschutz/Security-Best-Practice für einen Mail-Admin — keine
+ * Drittanbieter-Requests von der Login-/Postfach-Seite aus), nur
+ * System-Monospace-Stacks für den "Tech"-Akzent auf Überschriften.
+ */
+
+@import (reference) "colors";
+
+// Dezentes Punktraster im Content-Hintergrund — Tiefe ohne Ablenkung vom
+// eigentlichen Inhalt (radial-gradient als wiederholtes Muster).
+#layout-content,
+#mailview-left,
+.about,
+body.task-login {
+    background-image: radial-gradient(circle, fade(@color-main, 6%) 1px, transparent 1px);
+    background-size: 22px 22px;
+}
+
+// Primäre Buttons/aktive Elemente: sanfter Neon-Schein statt reinem Schatten
+.btn-primary,
+a.button.mainaction,
+#taskmenu .button.selected .inner,
+#taskmenu .button.action .inner {
+    box-shadow: 0 0 10px fade(@color-main, 55%);
+}
+.btn-primary:hover,
+.btn-primary:focus,
+a.button.mainaction:hover {
+    box-shadow: 0 0 18px fade(@color-main, 80%);
+}
+
+// Fokus-Ringe kräftiger/leuchtender als Bootstraps Standard-Blau-Schatten
+input:focus,
+textarea:focus,
+select:focus,
+.form-control:focus {
+    box-shadow: 0 0 0 3px fade(@color-main, 35%) !important;
+}
+
+// Logo im Task-Menü: dezenter Dauer-Glow
+#taskmenu #logo,
+.header-logo,
+#logo {
+    filter: drop-shadow(0 0 6px fade(@color-main, 65%));
+}
+
+// Ausgewähltes Listenelement: linker Neon-Balken statt nur Flächenfarbe
+.listing tr.selected,
+.listing tr.selected td,
+#contacts-table tr.selected {
+    box-shadow: inset 3px 0 0 0 @color-main;
+}
+
+// Task-Menü-Trennlinie/Rand mit Glow statt hartem Strich
+#layout-menu {
+    box-shadow: 0 0 20px fade(#000000, 60%);
+}
+
+// Überschriften/Markennamen: Tech-Monospace-Akzent, nur an ausgewählten
+// Stellen (nicht app-weit, um Icon-Fonts/FontAwesome nicht zu stören)
+.header-title,
+h1.voice,
+.watermark,
+#login-form .form-title,
+.product-name {
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    letter-spacing: 0.02em;
+}
+
+// Dünner, leuchtender Scrollbalken (Webkit) — Firefox nutzt weiterhin die
+// via @color-scrollbar-* gesetzte native Variante aus variables.less
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-thumb {
+    background-color: @color-scrollbar-thumb;
+    border-radius: 4px;
+    box-shadow: 0 0 4px fade(@color-main, 40%);
+}
+::-webkit-scrollbar-thumb:hover {
+    background-color: @color-main;
+}
+::-webkit-scrollbar-track {
+    background-color: @color-scrollbar-track;
+}
+
+// Ungelesene Nachrichten: Punkt-Indikator statt reiner Fettschrift, mit
+// Glow — bleibt zusätzlich zur bestehenden Fettschrift-Kennzeichnung
+.listing tr.unread td.subject::before {
+    content: "";
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: @color-main;
+    box-shadow: 0 0 6px fade(@color-main, 80%);
+    margin-right: 6px;
+    vertical-align: middle;
+}

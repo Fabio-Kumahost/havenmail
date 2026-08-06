@@ -664,15 +664,63 @@ havenmail_deploy_roundcube_skin() {
     ln -s "${rc_share}/skins/havenmail" "${rc_lib}/skins/havenmail"
   fi
 
-  # Farb-Override: Elastic bietet dafür einen offiziellen Hook
-  # (styles/_variables.less, per `@import (reference, optional)` am Ende
-  # von variables.less eingebunden) — muss aber, weil LESS-@import
-  # dateisystem-relativ zur Kompilierzeit auflöst, PHYSISCH in Elastics
-  # eigenem styles/-Verzeichnis liegen, nicht im havenmail-Skin-Ordner
-  # (Roundcubes Skin-Fallback-Mechanismus für Templates/Bilder gilt dafür
-  # NICHT, live so verifiziert).
-  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/roundcube/skins/havenmail/_variables.less" \
-    "${rc_share}/skins/elastic/styles/_variables.less"
+  # Farb-Override DIREKT in colors.less patchen statt über Elastics
+  # offiziell dokumentierten _variables.less-Hook: der Hook (`@import
+  # (reference, optional) "_variables"` am Ende von variables.less) wird
+  # zwar syntaktisch anstandslos eingebunden, seine Variablenwerte
+  # erreichen aber live nachweislich NICHT alle Dateien, die "variables"
+  # ihrerseits an mehreren Stellen erneut per @import (reference) einbinden
+  # (u. a. dark.less) — Ursache nicht abschließend geklärt (vermutlich ein
+  # Zusammenspiel mehrfacher reference-Imports desselben Moduls in dieser
+  # LESS-Compiler-Version), das Symptom aber eindeutig: ein isolierter
+  # Test, der NUR variables.less importiert, übernimmt den Override
+  # korrekt; das echte styles.less (das ihn nur transitiv über global.less
+  # bezieht) tut es nicht. Direktes Patchen von colors.less umgeht die
+  # Import-Reihenfolge-Frage komplett — dort gibt es nur eine einzige
+  # Definition je Variable, kein zweideutiger Mehrfach-Import.
+  local colors_less="${rc_share}/skins/elastic/styles/colors.less"
+  local override_file="${HAVENMAIL_REPO_DIR}/config/roundcube/skins/havenmail/_variables.less"
+  local overrides_tsv
+  overrides_tsv="$(mktemp)"
+  # "@name<TAB>wert" je Override-Zeile — TSV statt sed-Substitution, weil
+  # Farbwerte selbst "#" enthalten (Hex-Farben) und damit fast jedes
+  # gängige sed-Trennzeichen zerschießen würden.
+  grep -E '^[[:space:]]*@[A-Za-z0-9_-]+:' "$override_file" \
+    | sed -E 's/^[[:space:]]*(@[A-Za-z0-9_-]+):[[:space:]]*([^;]+);.*$/\1\t\2/' \
+    > "$overrides_tsv"
+
+  local patched_colors
+  patched_colors="$(mktemp)"
+  awk -F'\t' '
+    NR == FNR { val[$1] = $2; next }
+    {
+      line = $0
+      if (match(line, /^[[:space:]]*@[A-Za-z0-9_-]+:/)) {
+        name = substr(line, RSTART, RLENGTH)
+        gsub(/^[[:space:]]+|:$/, "", name)
+        if (name in val) {
+          rest = substr(line, RSTART + RLENGTH)
+          # Trailing-Kommentar (z. B. "// ...") hinter dem alten Wert
+          # erhalten, nur den Wert bis zum ";" ersetzen.
+          semi = index(rest, ";")
+          comment = semi ? substr(rest, semi + 1) : ""
+          print "  " name ": " val[name] ";" comment
+          next
+        }
+      }
+      print line
+    }
+  ' "$overrides_tsv" "$colors_less" > "$patched_colors"
+
+  install -m 0644 "$patched_colors" "$colors_less"
+  rm -f "$patched_colors" "$overrides_tsv"
+
+  # Zusätzliche CSS-Regeln (Glow-Effekte, Hintergrundtextur, Scrollbalken)
+  # — dieser Hook (`@import (optional) "_styles"` direkt in styles.less,
+  # NICHT über variables.less transitiv) funktioniert live nachweislich
+  # zuverlässig, im Unterschied zum obigen _variables.less-Hook.
+  install -m 0644 "${HAVENMAIL_REPO_DIR}/config/roundcube/skins/havenmail/_styles.less" \
+    "${rc_share}/skins/elastic/styles/_styles.less"
 
   local build_dir
   build_dir="$(mktemp -d)"

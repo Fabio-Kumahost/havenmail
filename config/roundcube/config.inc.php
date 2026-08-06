@@ -80,7 +80,7 @@ $config['plugins'] = [
 
 // skin name: folder from skins/
 $config['skin'] = 'havenmail';
-$config['skin_logo'] = '/skins/havenmail/images/logo.svg';
+$config['skin_logo'] = 'skins/havenmail/images/logo.svg';
 
 // Disable spellchecking
 // Debian: spellchecking needs additional packages to be installed, or calling external APIs
