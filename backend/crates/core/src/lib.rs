@@ -20,6 +20,7 @@ pub mod mailbox_storage;
 pub mod notify;
 pub mod rbac;
 pub mod rspamd_client;
+pub mod secrets_crypto;
 pub mod service_status;
 pub mod tls_status;
 pub mod trigger_file;

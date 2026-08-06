@@ -1,9 +1,13 @@
 import { createContext, useContext, useState, type ReactNode } from 'react'
-import { api, setTokens, clearTokens, isAuthenticated, ApiError } from './api'
+import { api, setTokens, clearTokens, isAuthenticated, isTotpRequired, ApiError } from './api'
 
 interface AuthContextValue {
   loggedIn: boolean
-  login: (email: string, password: string) => Promise<void>
+  /** Gibt 'totp_required' zurück statt einzuloggen, wenn das Konto 2FA
+   *  aktiviert hat und kein (oder ein falscher) totpCode mitgegeben wurde —
+   *  der Aufrufer (Login.tsx) zeigt dann ein Code-Eingabefeld und ruft
+   *  login() erneut mit totpCode auf. */
+  login: (email: string, password: string, totpCode?: string) => Promise<'ok' | 'totp_required'>
   logout: () => void
 }
 
@@ -16,10 +20,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // einen API-Call machen konnte.
   const [loggedIn, setLoggedIn] = useState(isAuthenticated())
 
-  async function login(email: string, password: string) {
-    const tokens = await api.login(email, password)
-    setTokens(tokens.access_token, tokens.refresh_token)
+  async function login(email: string, password: string, totpCode?: string) {
+    const result = await api.login(email, password, totpCode)
+    if (isTotpRequired(result)) {
+      return 'totp_required' as const
+    }
+    setTokens(result.access_token, result.refresh_token)
     setLoggedIn(true)
+    return 'ok' as const
   }
 
   function logout() {

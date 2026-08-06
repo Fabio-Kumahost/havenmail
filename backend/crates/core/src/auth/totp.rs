@@ -59,6 +59,29 @@ pub fn verify_code(base32_secret: &str, code: &str) -> Result<bool, TotpError> {
     Ok(totp.check_current(code).unwrap_or(false))
 }
 
+/// Erzeugt den aktuell gültigen 6-stelligen Code für ein Base32-Secret —
+/// nützlich für Tests (eine Authenticator-App simulieren, ohne eine externe
+/// Abhängigkeit von der Systemuhr des Testrunners zu riskieren) sowie für
+/// jeden Ort, der einen "so sieht ein gültiger Code gerade aus"-Hinweis
+/// braucht.
+pub fn generate_current_code(base32_secret: &str) -> Result<String, TotpError> {
+    let secret_bytes = Secret::Encoded(base32_secret.to_string())
+        .to_bytes()
+        .map_err(|e| TotpError::InvalidSecret(e.to_string()))?;
+    let totp = TOTP::new(
+        Algorithm::SHA1,
+        6,
+        1,
+        30,
+        secret_bytes,
+        None,
+        "".to_string(),
+    )
+    .map_err(|e| TotpError::InvalidSecret(e.to_string()))?;
+    totp.generate_current()
+        .map_err(|e| TotpError::InvalidSecret(e.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -68,21 +91,7 @@ mod tests {
         let (secret, uri) = generate_secret("admin@example.org", "Havenmail").unwrap();
         assert!(uri.starts_with("otpauth://totp/"));
 
-        // Code für das aktuelle Zeitfenster selbst erzeugen, um die
-        // Verifikation ohne externe Abhängigkeit von der Systemuhr zu testen.
-        let secret_bytes = Secret::Encoded(secret.clone()).to_bytes().unwrap();
-        let totp = TOTP::new(
-            Algorithm::SHA1,
-            6,
-            1,
-            30,
-            secret_bytes,
-            None,
-            "".to_string(),
-        )
-        .unwrap();
-        let code = totp.generate_current().unwrap();
-
+        let code = generate_current_code(&secret).unwrap();
         assert!(verify_code(&secret, &code).unwrap());
     }
 

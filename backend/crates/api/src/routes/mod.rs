@@ -10,6 +10,7 @@ pub mod forwards;
 pub mod mail_queue;
 pub mod security_settings;
 pub mod system;
+pub mod totp;
 pub mod users;
 
 use crate::state::AppState;
@@ -51,6 +52,10 @@ pub fn router() -> Router<AppState> {
             "/api/v1/users/me/password",
             patch(users::change_own_password),
         )
+        .route("/api/v1/users/me/totp", get(totp::get_status))
+        .route("/api/v1/users/me/totp/enroll", post(totp::enroll))
+        .route("/api/v1/users/me/totp/confirm", post(totp::confirm))
+        .route("/api/v1/users/me/totp/disable", post(totp::disable))
         .route(
             "/api/v1/domains/:domain_id/aliases",
             post(aliases::create_alias).get(aliases::list_aliases),

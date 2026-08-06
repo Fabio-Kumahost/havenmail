@@ -231,6 +231,25 @@ export interface Fail2banStatus {
   jails: JailStatus[]
 }
 
+export interface TotpRequired {
+  totp_required: true
+}
+
+export type LoginResult = TokenResponse | TotpRequired
+
+export function isTotpRequired(result: LoginResult): result is TotpRequired {
+  return 'totp_required' in result
+}
+
+export interface TotpStatus {
+  enabled: boolean
+}
+
+export interface TotpEnrollment {
+  secret: string
+  otpauth_uri: string
+}
+
 export interface BackupHistoryEntry {
   filename: string
   size_bytes: number
@@ -250,8 +269,8 @@ export interface BackupStatus {
 }
 
 export const api = {
-  login: (email: string, password: string) =>
-    request<TokenResponse>('POST', '/api/v1/auth/login', { email, password }),
+  login: (email: string, password: string, totp_code?: string) =>
+    request<LoginResult>('POST', '/api/v1/auth/login', { email, password, totp_code }),
   domains: {
     list: () => request<Domain[]>('GET', '/api/v1/domains'),
     create: (name: string) => request<Domain>('POST', '/api/v1/domains', { name }),
@@ -303,6 +322,14 @@ export const api = {
   account: {
     changePassword: (current_password: string, new_password: string) =>
       request<User>('PATCH', '/api/v1/users/me/password', { current_password, new_password }),
+  },
+  totp: {
+    status: () => request<TotpStatus>('GET', '/api/v1/users/me/totp'),
+    enroll: () => request<TotpEnrollment>('POST', '/api/v1/users/me/totp/enroll'),
+    confirm: (secret: string, code: string) =>
+      request<{ status: string }>('POST', '/api/v1/users/me/totp/confirm', { secret, code }),
+    disable: (password: string) =>
+      request<{ status: string }>('POST', '/api/v1/users/me/totp/disable', { password }),
   },
   securitySettings: {
     get: () => request<SecuritySettings>('GET', '/api/v1/system/security-settings'),

@@ -6,8 +6,9 @@ use crate::client_ip;
 use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 use axum::{extract::State, http::HeaderMap, Json};
-use havenmail_core::auth::{jwt::ACCESS_TOKEN_TTL_SECONDS, password, token};
+use havenmail_core::auth::{jwt::ACCESS_TOKEN_TTL_SECONDS, password, token, totp};
 use havenmail_core::rbac::Role;
+use havenmail_core::secrets_crypto;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
@@ -20,6 +21,13 @@ const REFRESH_TOKEN_MAX_AGE_DAYS: i64 = 30;
 pub struct LoginRequest {
     pub email: String,
     pub password: String,
+    /// Nur nötig, wenn das Konto TOTP aktiviert hat (siehe `routes/totp.rs`).
+    /// Fehlt er bei einem 2FA-Konto oder ist er falsch, liefert `login`
+    /// `{"totp_required": true}` statt Tokens — die Passwortprüfung ist zu
+    /// diesem Zeitpunkt bereits erfolgreich, also kein Enumerations-Risiko
+    /// durch die unterschiedliche Antwortform an dieser Stelle.
+    #[serde(default)]
+    pub totp_code: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -37,6 +45,7 @@ struct UserAuthRow {
     role: String,
     domain_id: Uuid,
     is_active: bool,
+    totp_secret_enc: Option<Vec<u8>>,
 }
 
 /// Konstant gehaltener Dummy-Hash für den Fall "Benutzer nicht gefunden" —
@@ -51,7 +60,7 @@ pub async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(req): Json<LoginRequest>,
-) -> ApiResult<Json<TokenResponse>> {
+) -> ApiResult<Json<serde_json::Value>> {
     let ip = client_ip::extract(&headers);
     if state.login_rate_limiter.is_blocked(ip) {
         return Err(ApiError::TooManyRequests);
@@ -59,7 +68,7 @@ pub async fn login(
 
     let row: Option<UserAuthRow> = sqlx::query_as(
         r#"
-        SELECT u.id, u.password_hash, u.role::text as role, u.domain_id, u.is_active
+        SELECT u.id, u.password_hash, u.role::text as role, u.domain_id, u.is_active, u.totp_secret_enc
         FROM users u
         JOIN domains d ON d.id = u.domain_id
         WHERE u.local_part || '@' || d.name = $1 AND d.is_active
@@ -69,13 +78,14 @@ pub async fn login(
     .fetch_optional(&state.db)
     .await?;
 
-    let (user_id, stored_hash, role, domain_id, is_active) = match &row {
+    let (user_id, stored_hash, role, domain_id, is_active, totp_secret_enc) = match &row {
         Some(r) => (
             r.id,
             r.password_hash.clone(),
             r.role.clone(),
             r.domain_id,
             r.is_active,
+            r.totp_secret_enc.clone(),
         ),
         None => (
             Uuid::nil(),
@@ -83,6 +93,7 @@ pub async fn login(
             "user".to_string(),
             Uuid::nil(),
             false,
+            None,
         ),
     };
 
@@ -93,8 +104,29 @@ pub async fn login(
     }
     state.login_rate_limiter.record_success(ip);
 
+    if let Some(encrypted_secret) = totp_secret_enc {
+        let secret = secrets_crypto::decrypt(&state.secrets_key, &encrypted_secret)
+            .map_err(|e| ApiError::TokenIssue(e.to_string()))?;
+        let code_ok = req
+            .totp_code
+            .as_deref()
+            .map(|code| totp::verify_code(&secret, code).unwrap_or(false))
+            .unwrap_or(false);
+        if !code_ok {
+            // Absichtlich kein Rate-Limit-Fehlschlag hier: das Passwort war
+            // bereits korrekt, ein falscher/fehlender TOTP-Code ist kein
+            // Enumerations- oder Brute-Force-Signal auf das Passwort selbst.
+            // Der Login-Rate-Limiter deckt weiterhin Passwort-Rateraten ab;
+            // TOTP-Codes haben ohnehin nur 30s Gültigkeit.
+            return Ok(Json(serde_json::json!({ "totp_required": true })));
+        }
+    }
+
     let role = parse_role(&role);
-    issue_token_pair(&state, user_id, role, domain_id).await
+    let tokens = issue_token_pair(&state, user_id, role, domain_id).await?;
+    Ok(Json(
+        serde_json::to_value(tokens.0).expect("TokenResponse ist immer serialisierbar"),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -138,7 +170,7 @@ pub async fn refresh(
 
     let user: Option<UserAuthRow> = sqlx::query_as(
         r#"
-        SELECT id, password_hash, role::text as role, domain_id, is_active
+        SELECT id, password_hash, role::text as role, domain_id, is_active, totp_secret_enc
         FROM users WHERE id = $1
         "#,
     )

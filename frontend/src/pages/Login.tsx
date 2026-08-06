@@ -7,6 +7,8 @@ export default function Login() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [totpCode, setTotpCode] = useState('')
+  const [totpRequired, setTotpRequired] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -15,8 +17,16 @@ export default function Login() {
     setError(null)
     setSubmitting(true)
     try {
-      await login(email, password)
-      navigate('/')
+      const result = await login(email, password, totpRequired ? totpCode : undefined)
+      if (result === 'totp_required') {
+        setTotpRequired(true)
+        if (totpCode) {
+          setError('Code ist ungültig oder abgelaufen.')
+          setTotpCode('')
+        }
+      } else {
+        navigate('/')
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Anmeldung fehlgeschlagen')
     } finally {
@@ -35,7 +45,8 @@ export default function Login() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            autoFocus
+            autoFocus={!totpRequired}
+            disabled={totpRequired}
           />
         </label>
         <label>
@@ -45,15 +56,31 @@ export default function Login() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
+            disabled={totpRequired}
           />
         </label>
+        {totpRequired && (
+          <label>
+            Bestätigungscode aus der Authenticator-App
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              value={totpCode}
+              onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
+              required
+              autoFocus
+            />
+          </label>
+        )}
         {error && (
           <p className="error" role="alert">
             {error}
           </p>
         )}
         <button type="submit" disabled={submitting}>
-          {submitting ? 'Anmelden…' : 'Anmelden'}
+          {submitting ? 'Anmelden…' : totpRequired ? 'Bestätigen' : 'Anmelden'}
         </button>
       </form>
     </div>

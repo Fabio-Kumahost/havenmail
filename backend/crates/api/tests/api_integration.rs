@@ -388,8 +388,17 @@ async fn system_status_requires_super_admin_and_reports_database_up() {
     assert_eq!(body["database"], json!(true));
     let services = body["services"].as_array().expect("services ist ein Array");
     assert!(services.iter().any(|s| s["unit"] == "postfix"));
-    // Kein install.sh-Lauf in der Testumgebung -> keine tls-expiry-Datei.
-    assert!(body["tls"].is_null());
+    // `tls` hängt vom Dateisystem außerhalb der Testkontrolle ab
+    // (${HAVENMAIL_ETC_DIR:-/etc/havenmail}/tls-expiry): in CI/lokal ohne
+    // install.sh-Lauf fehlt die Datei -> null; läuft der Test dagegen direkt
+    // auf einem echten Havenmail-Host, existiert sie echt. Beide sind
+    // korrektes Verhalten der Route, also beide hier zulässig — nur die
+    // Form im nicht-null-Fall wird geprüft, nicht welcher Fall es ist.
+    assert!(
+        body["tls"].is_null() || body["tls"]["expires_at"].is_string(),
+        "tls sollte entweder null oder ein Objekt mit expires_at sein: {:?}",
+        body["tls"]
+    );
 
     // Ohne Token: nicht authentifiziert, keine Statusdetails preisgegeben.
     let (status, _) = call(&app, "GET", "/api/v1/system/status", None, None).await;
@@ -558,4 +567,212 @@ async fn audit_log_covers_aliases_distribution_lists_and_dkim() {
             "erwartete Aktion '{expected_action}' fehlt im Audit-Log: {entries:?}"
         );
     }
+}
+
+#[tokio::test]
+async fn refresh_rotates_tokens_and_revokes_the_old_refresh_token() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (email, password) = bootstrap_super_admin(&db).await;
+
+    let (status, login_body) = call(
+        &app,
+        "POST",
+        "/api/v1/auth/login",
+        None,
+        Some(json!({ "email": email, "password": password })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{login_body:?}");
+    let old_refresh = login_body["refresh_token"].as_str().unwrap().to_string();
+
+    let (status, refreshed) = call(
+        &app,
+        "POST",
+        "/api/v1/auth/refresh",
+        None,
+        Some(json!({ "refresh_token": old_refresh })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{refreshed:?}");
+    assert!(refreshed["access_token"].as_str().is_some());
+    let new_refresh = refreshed["refresh_token"].as_str().unwrap().to_string();
+    assert_ne!(old_refresh, new_refresh, "Refresh-Token muss rotieren");
+
+    // Der alte Refresh-Token darf nach der Rotation nicht mehr funktionieren.
+    let (status, _) = call(
+        &app,
+        "POST",
+        "/api/v1/auth/refresh",
+        None,
+        Some(json!({ "refresh_token": old_refresh })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // Der neue funktioniert.
+    let (status, _) = call(
+        &app,
+        "POST",
+        "/api/v1/auth/refresh",
+        None,
+        Some(json!({ "refresh_token": new_refresh })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn totp_enrollment_confirm_and_login_flow() {
+    let Some((app, db)) = setup().await else {
+        eprintln!("HAVENMAIL_TEST_DATABASE_URL nicht gesetzt — Test übersprungen");
+        return;
+    };
+    let (email, password) = bootstrap_super_admin(&db).await;
+    let access_token = login(&app, &email, &password).await;
+
+    // Vor der Aktivierung: enabled=false, normaler Login ohne Code klappt.
+    let (status, status_body) = call(
+        &app,
+        "GET",
+        "/api/v1/users/me/totp",
+        Some(&access_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{status_body:?}");
+    assert_eq!(status_body["enabled"], json!(false));
+
+    // Enrollment: Secret erzeugen, NICHT persistiert.
+    let (status, enroll_body) = call(
+        &app,
+        "POST",
+        "/api/v1/users/me/totp/enroll",
+        Some(&access_token),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{enroll_body:?}");
+    let secret = enroll_body["secret"].as_str().unwrap().to_string();
+    assert!(enroll_body["otpauth_uri"]
+        .as_str()
+        .unwrap()
+        .starts_with("otpauth://totp/"));
+
+    // Confirm mit falschem Code schlägt fehl und aktiviert nichts.
+    let (status, _) = call(
+        &app,
+        "POST",
+        "/api/v1/users/me/totp/confirm",
+        Some(&access_token),
+        Some(json!({ "secret": secret, "code": "000000" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Confirm mit echtem, aktuell gültigem Code aktiviert 2FA.
+    let code = havenmail_core::auth::totp::generate_current_code(&secret).unwrap();
+    let (status, confirm_body) = call(
+        &app,
+        "POST",
+        "/api/v1/users/me/totp/confirm",
+        Some(&access_token),
+        Some(json!({ "secret": secret, "code": code })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{confirm_body:?}");
+
+    let (_, status_body) = call(
+        &app,
+        "GET",
+        "/api/v1/users/me/totp",
+        Some(&access_token),
+        None,
+    )
+    .await;
+    assert_eq!(status_body["enabled"], json!(true));
+
+    // Login ohne Code liefert jetzt totp_required statt Tokens.
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/auth/login",
+        None,
+        Some(json!({ "email": email, "password": password })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    assert_eq!(body["totp_required"], json!(true));
+    assert!(body["access_token"].is_null());
+
+    // Login mit falschem Code ebenfalls totp_required, keine Tokens.
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/auth/login",
+        None,
+        Some(json!({ "email": email, "password": password, "totp_code": "000000" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    assert_eq!(body["totp_required"], json!(true));
+
+    // Login mit korrektem Code liefert echte Tokens.
+    let code = havenmail_core::auth::totp::generate_current_code(&secret).unwrap();
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/auth/login",
+        None,
+        Some(json!({ "email": email, "password": password, "totp_code": code })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    assert!(body["access_token"].as_str().is_some());
+
+    // Disable mit falschem Passwort schlägt fehl, 2FA bleibt aktiv.
+    let (status, _) = call(
+        &app,
+        "POST",
+        "/api/v1/users/me/totp/disable",
+        Some(&access_token),
+        Some(json!({ "password": "definitiv-falsch" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Disable mit korrektem Passwort deaktiviert 2FA wieder.
+    let (status, disable_body) = call(
+        &app,
+        "POST",
+        "/api/v1/users/me/totp/disable",
+        Some(&access_token),
+        Some(json!({ "password": password })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{disable_body:?}");
+
+    let (_, status_body) = call(
+        &app,
+        "GET",
+        "/api/v1/users/me/totp",
+        Some(&access_token),
+        None,
+    )
+    .await;
+    assert_eq!(status_body["enabled"], json!(false));
+
+    // Normaler Login ohne Code funktioniert wieder.
+    let (status, body) = call(
+        &app,
+        "POST",
+        "/api/v1/auth/login",
+        None,
+        Some(json!({ "email": email, "password": password })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body:?}");
+    assert!(body["access_token"].as_str().is_some());
 }

@@ -7,10 +7,7 @@
 //! werden ausschließlich verschlüsselt (AES-256-GCM) in `dkim_keys.private_key_enc`
 //! abgelegt.
 
-use aes_gcm::{
-    aead::{Aead, AeadCore, KeyInit, OsRng},
-    Aes256Gcm, Key, Nonce,
-};
+use crate::secrets_crypto::{self, SecretsCryptoError};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use rsa::pkcs1::EncodeRsaPublicKey;
 use rsa::pkcs8::{EncodePrivateKey, LineEnding};
@@ -18,8 +15,6 @@ use rsa::{RsaPrivateKey, RsaPublicKey};
 use thiserror::Error;
 
 const RSA_KEY_BITS: usize = 2048;
-/// Länge des AES-GCM-Nonce in Bytes (Standard für AES-GCM).
-const NONCE_LEN: usize = 12;
 
 #[derive(Debug, Error)]
 pub enum DkimError {
@@ -31,6 +26,16 @@ pub enum DkimError {
     Decryption,
     #[error("Master-Schlüssel muss genau 32 Byte lang sein")]
     InvalidMasterKey,
+}
+
+impl From<SecretsCryptoError> for DkimError {
+    fn from(e: SecretsCryptoError) -> Self {
+        match e {
+            SecretsCryptoError::Encryption => DkimError::Encryption,
+            SecretsCryptoError::Decryption => DkimError::Decryption,
+            SecretsCryptoError::InvalidMasterKey => DkimError::InvalidMasterKey,
+        }
+    }
 }
 
 pub struct GeneratedDkimKey {
@@ -69,38 +74,12 @@ pub fn generate_dkim_key() -> Result<GeneratedDkimKey, DkimError> {
 /// vom Installer generiert). Rückgabe: `nonce || ciphertext`, so wie es in
 /// `dkim_keys.private_key_enc` gespeichert wird.
 pub fn encrypt_private_key(master_key: &[u8], private_key_pem: &str) -> Result<Vec<u8>, DkimError> {
-    if master_key.len() != 32 {
-        return Err(DkimError::InvalidMasterKey);
-    }
-    let key = Key::<Aes256Gcm>::from_slice(master_key);
-    let cipher = Aes256Gcm::new(key);
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-    let ciphertext = cipher
-        .encrypt(&nonce, private_key_pem.as_bytes())
-        .map_err(|_| DkimError::Encryption)?;
-
-    let mut out = Vec::with_capacity(NONCE_LEN + ciphertext.len());
-    out.extend_from_slice(&nonce);
-    out.extend_from_slice(&ciphertext);
-    Ok(out)
+    Ok(secrets_crypto::encrypt(master_key, private_key_pem)?)
 }
 
 /// Entschlüsselt einen mit [`encrypt_private_key`] verschlüsselten Blob.
 pub fn decrypt_private_key(master_key: &[u8], blob: &[u8]) -> Result<String, DkimError> {
-    if master_key.len() != 32 {
-        return Err(DkimError::InvalidMasterKey);
-    }
-    if blob.len() < NONCE_LEN {
-        return Err(DkimError::Decryption);
-    }
-    let (nonce_bytes, ciphertext) = blob.split_at(NONCE_LEN);
-    let key = Key::<Aes256Gcm>::from_slice(master_key);
-    let cipher = Aes256Gcm::new(key);
-    let nonce = Nonce::from_slice(nonce_bytes);
-    let plaintext = cipher
-        .decrypt(nonce, ciphertext)
-        .map_err(|_| DkimError::Decryption)?;
-    String::from_utf8(plaintext).map_err(|_| DkimError::Decryption)
+    Ok(secrets_crypto::decrypt(master_key, blob)?)
 }
 
 #[cfg(test)]
