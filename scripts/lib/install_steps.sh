@@ -369,6 +369,15 @@ havenmail_deploy_mail_configs() {
   havenmail_log "Installiere gerenderte Mail-Engine-Konfiguration an Systempfade…"
   install -d -m 0755 /etc/postfix/havenmail
   install -m 0644 "${render_dir}/postfix/main.cf" /etc/postfix/main.cf
+  # Idempotent anhängen: einen bereits vorhandenen, per Marker-Kommentaren
+  # begrenzten Block zuerst entfernen — sonst dupliziert sich der Block
+  # bei jedem weiteren install.sh-/update.sh-Lauf (zweite submission/
+  # smtps-Definition lässt Postfix die Portbindung beim nächsten Reload
+  # verweigern, gefunden im Sicherheits-/Bug-Audit vom 2026-08-07).
+  if [[ -f /etc/postfix/master.cf ]] && grep -q "HAVENMAIL-MANAGED-BLOCK-START" /etc/postfix/master.cf; then
+    sed -i '/# === HAVENMAIL-MANAGED-BLOCK-START/,/# === HAVENMAIL-MANAGED-BLOCK-END ===/d' \
+      /etc/postfix/master.cf
+  fi
   cat "${render_dir}/postfix/master.cf.append" >> /etc/postfix/master.cf
   install -m 0640 -o root -g postfix "${render_dir}/postfix/pgsql-virtual-domains.cf" /etc/postfix/havenmail/
   install -m 0640 -o root -g postfix "${render_dir}/postfix/pgsql-virtual-mailboxes.cf" /etc/postfix/havenmail/
@@ -523,11 +532,15 @@ havenmail_bootstrap_admin() {
 
   admin_password="$(havenmail_random_secret 24)"
   havenmail_log "Lege ersten Administrator an (${admin_local_part}@${domain})…"
-  "${HAVENMAIL_REPO_DIR}/backend/target/release/havenmail-cli" bootstrap-admin \
+  # --password bewusst NICHT als CLI-Argument (auf der Kommandozeile für
+  # jeden lokalen Nutzer über ps/proc/<pid>/cmdline sichtbar, gefunden im
+  # Sicherheits-/Bug-Audit vom 2026-08-07) — stattdessen nur per Env-Var,
+  # die havenmail-cli genauso akzeptiert (siehe cli/src/main.rs).
+  HAVENMAIL_BOOTSTRAP_ADMIN_PASSWORD="$admin_password" \
+    "${HAVENMAIL_REPO_DIR}/backend/target/release/havenmail-cli" bootstrap-admin \
     --database-url "$(havenmail_env_get DATABASE_URL)" \
     --domain "$domain" \
-    --local-part "$admin_local_part" \
-    --password "$admin_password" >/dev/null
+    --local-part "$admin_local_part" >/dev/null
 
   umask 077
   cat > "$credentials_file" <<EOF

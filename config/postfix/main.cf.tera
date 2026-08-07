@@ -32,6 +32,22 @@ virtual_transport = lmtp:unix:private/dovecot-lmtp
 # als "nicht owned" und Versand wird für alle Benutzer abgelehnt.
 smtpd_sender_login_maps = pgsql:/etc/postfix/havenmail/pgsql-sender-login-maps.cf
 
+# mynetworks bewusst explizit NUR auf Loopback beschränkt — ohne diese
+# Zeile fällt Postfix auf seinen einprogrammierten Default
+# "mynetworks_style = subnet" zurück, der automatisch JEDEM Host im
+# selben Subnetz Relay-Vertrauen (permit_mynetworks unten) einräumt. Auf
+# einem Cloud-/VPS-Host mit geteiltem Subnetz wäre das ein Open Relay für
+# fremde Hosts im selben Adressblock, trotz der unten dokumentierten
+# Restriktivitäts-Absicht (gefunden im Sicherheits-/Bug-Audit vom
+# 2026-08-07). Echter Mailversand läuft ausschließlich über SASL-Auth auf
+# Submission/SMTPS (permit_sasl_authenticated unten) — mynetworks deckt
+# hier nur noch den lokalen Postfix-Prozess selbst ab (z. B.
+# /usr/sbin/sendmail-Aufrufe für Benachrichtigungs-E-Mails und
+# Sieve-Autoresponder, die beide über die lokale pickup-Queue laufen,
+# nicht über smtpd — brauchen mynetworks daher eigentlich gar nicht,
+# schadet als zusätzliche Absicherung aber nicht).
+mynetworks = 127.0.0.0/8 [::1]/128
+
 # Eingehend (Port 25): kein Relay für fremde Domains, keine unauthentifizierte
 # Weiterleitung. sender/recipient-Restriktionen bewusst restriktiv, nicht
 # nur "permit_mynetworks".

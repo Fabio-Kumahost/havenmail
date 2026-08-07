@@ -60,7 +60,22 @@ havenmail_random_alnum() {
 }
 
 havenmail_ensure_dirs() {
-  install -d -m 0750 -o root -g root "$HAVENMAIL_ETC_DIR"
+  # -g "$HAVENMAIL_SYSTEM_USER" (nicht "root") — havenmail-api.service
+  # läuft als User/Group "havenmail" und muss dieses Verzeichnis
+  # durchqueren können, um das eigene Unterverzeichnis dkim/ zu erreichen
+  # (siehe ReadWritePaths in havenmail-api.service). Bis 2026-08-07 setzte
+  # diese Funktion hier "root:root", was havenmail_write_env_file danach
+  # zwar auf "root:havenmail" korrigierte — aber update.sh ruft NUR
+  # havenmail_ensure_dirs auf, nicht write_env_file, und setzte die
+  # Berechtigung damit bei jedem Update-Lauf wieder auf "root:root"
+  # zurück, wodurch die DKIM-Schlüsselrotation über das Admin-Panel mit
+  # "Permission denied" fehlschlug (gefunden im Sicherheits-/Bug-Audit
+  # vom 2026-08-07). Erfordert, dass die Gruppe "$HAVENMAIL_SYSTEM_USER"
+  # bereits existiert — install.sh ruft havenmail_ensure_system_user
+  # deshalb immer VOR havenmail_ensure_dirs auf; update.sh setzt eine
+  # bereits abgeschlossene Erstinstallation voraus (der Nutzer/die Gruppe
+  # existiert dort also bereits).
+  install -d -m 0750 -o root -g "$HAVENMAIL_SYSTEM_USER" "$HAVENMAIL_ETC_DIR"
   install -d -m 0750 -o "$HAVENMAIL_SYSTEM_USER" -g "$HAVENMAIL_SYSTEM_USER" "$HAVENMAIL_STATE_DIR"
   install -d -m 0750 -o "$HAVENMAIL_SYSTEM_USER" -g "$HAVENMAIL_SYSTEM_USER" "$HAVENMAIL_MAIL_DIR"
   install -d -m 0750 -o "$HAVENMAIL_SYSTEM_USER" -g "$HAVENMAIL_SYSTEM_USER" "$HAVENMAIL_LOG_DIR"

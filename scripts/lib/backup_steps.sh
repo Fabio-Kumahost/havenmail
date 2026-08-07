@@ -42,8 +42,13 @@ havenmail_backup_create() {
 
   if [[ -n "${HAVENMAIL_BACKUP_PASSPHRASE:-}" ]]; then
     havenmail_log "Verschlüssele Archiv (gpg, symmetrisch)…"
-    gpg --batch --yes --passphrase "$HAVENMAIL_BACKUP_PASSPHRASE" \
-      --cipher-algo AES256 --symmetric --output "${archive}.gpg" "$archive"
+    # --passphrase-fd 0 (Passphrase über stdin) statt --passphrase "$var"
+    # — Letzteres landet als Klartext-Argument im Prozess-argv und ist
+    # damit für jeden lokalen Nutzer über ps/proc/<pid>/cmdline lesbar
+    # (gefunden im Sicherheits-/Bug-Audit vom 2026-08-07).
+    gpg --batch --yes --passphrase-fd 0 \
+      --cipher-algo AES256 --symmetric --output "${archive}.gpg" "$archive" \
+      <<< "$HAVENMAIL_BACKUP_PASSPHRASE"
     rm -f "$archive"
     archive="${archive}.gpg"
   else
@@ -105,7 +110,10 @@ havenmail_backup_restore() {
       echo
     fi
     archive="${stage_dir}/decrypted.tar.gz"
-    gpg --batch --yes --passphrase "$passphrase" --decrypt --output "$archive" "$target"
+    # --passphrase-fd 0 statt --passphrase "$var" — siehe Kommentar in
+    # havenmail_backup_create oben (ps/proc/<pid>/cmdline-Sichtbarkeit).
+    gpg --batch --yes --passphrase-fd 0 --decrypt --output "$archive" "$target" \
+      <<< "$passphrase"
   fi
 
   havenmail_log "Entpacke Backup…"

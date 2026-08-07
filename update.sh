@@ -15,7 +15,17 @@
 # diesen Zwischenschritt würde `git checkout` die gerade laufende
 # update.sh-Datei unter sich selbst verändern — bash liest Skriptdateien
 # nicht atomar ein, das Verhalten danach wäre undefiniert.
-set -euo pipefail
+#
+# -E (errtrace) ist hier zwingend nötig, nicht nur Stil: der weiter unten
+# gesetzte `trap rollback ERR` (Phase 2) feuert ohne -E NUR für Fehler auf
+# der obersten Skriptebene, NICHT innerhalb aufgerufener Funktionen (z. B.
+# havenmail_build_backend, havenmail_render_configs, …) — genau dort
+# passieren die eigentlichen Fehlerfälle. Ohne -E blieb der Rollback bis
+# 2026-08-07 faktisch totes Sicherheitsnetz: `set -e` beendete das Skript
+# zwar korrekt, aber rollback() lief nie, die API blieb im bereits
+# gestoppten Wartungsmodus stehen (gefunden im Sicherheits-/Bug-Audit vom
+# selben Tag, per isoliertem Bash-Test bestätigt).
+set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/preflight.sh

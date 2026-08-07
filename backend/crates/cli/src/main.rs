@@ -106,7 +106,14 @@ enum Command {
         /// Lokaler Teil der Admin-Adresse, z. B. "admin" für admin@domain.
         #[arg(long, default_value = "admin")]
         local_part: String,
-        #[arg(long)]
+        /// Auch per Env-Var lesbar (HAVENMAIL_BOOTSTRAP_ADMIN_PASSWORD) —
+        /// scripts/lib/install_steps.sh nutzt beim echten Install-Lauf
+        /// bewusst NUR die Env-Var, nicht `--password`, damit das initiale
+        /// Admin-Passwort nicht als Klartext-Argument im Prozess-argv
+        /// landet (über ps/proc/<pid>/cmdline für jeden lokalen Nutzer
+        /// lesbar, gefunden im Sicherheits-/Bug-Audit vom 2026-08-07).
+        /// `--password` bleibt für manuelle/Test-Aufrufe nutzbar.
+        #[arg(long, env = "HAVENMAIL_BOOTSTRAP_ADMIN_PASSWORD")]
         password: String,
     },
     /// Erfasst eine Momentaufnahme der Rspamd-/ClamAV-/Postfix-Kennzahlen

@@ -1,6 +1,15 @@
 # Von der Havenmail Control-Plane gerendert und an /etc/postfix/master.cf
 # angehängt — nicht manuell bearbeiten. Aktiviert Submission (587,
 # STARTTLS+SASL-Pflicht) und optional SMTPS (465, implizites TLS).
+#
+# Die Marker-Kommentare (Start/Ende) sind KEIN reiner Deko-Text: sie
+# geben scripts/lib/install_steps.sh::havenmail_deploy_mail_configs ein
+# eindeutig auffindbares Ziel, um einen bereits angehängten Block vor dem
+# erneuten Anhängen zu entfernen — ohne sie dupliziert sich dieser Block
+# bei jedem weiteren update.sh-Lauf (zweite submission/smtps-Definition
+# lässt Postfix beim nächsten Reload die Portbindung 587/465 verweigern,
+# gefunden im Sicherheits-/Bug-Audit vom 2026-08-07).
+# === HAVENMAIL-MANAGED-BLOCK-START (nicht manuell bearbeiten) ===
 
 submission inet n       -       y       -       -       smtpd
   -o syslog_name=postfix/submission
@@ -19,3 +28,4 @@ smtps     inet  n       -       y       -       -       smtpd
   -o smtpd_relay_restrictions=permit_sasl_authenticated,reject
   -o smtpd_sender_restrictions=reject_sender_login_mismatch
   -o milter_macro_daemon_name=ORIGINATING
+# === HAVENMAIL-MANAGED-BLOCK-END ===
