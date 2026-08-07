@@ -43,26 +43,28 @@ export default function System() {
       {status && (
         <div className="card">
           <h2>Dienste</h2>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Dienst</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {status.services.map((service) => (
-                <tr key={service.unit}>
-                  <td>{service.unit}</td>
-                  <td>
-                    <span className={`badge badge-${service.active ? 'ready' : 'not_ready'}`}>
-                      {service.detail}
-                    </span>
-                  </td>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Dienst</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {status.services.map((service) => (
+                  <tr key={service.unit}>
+                    <td>{service.unit}</td>
+                    <td>
+                      <span className={`badge badge-${service.active ? 'ready' : 'not_ready'}`}>
+                        {service.detail}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
       {status && (
@@ -98,30 +100,32 @@ export default function System() {
               befüllt diese Ansicht.
             </p>
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Liste</th>
-                  <th>Status</th>
-                  <th>Zuletzt geprüft</th>
-                </tr>
-              </thead>
-              <tbody>
-                {status.rbl.map((entry) => (
-                  <tr key={entry.zone}>
-                    <td>
-                      <code>{entry.zone}</code>
-                    </td>
-                    <td>
-                      <span className={`badge badge-${entry.status === 'ok' ? 'ready' : 'not_ready'}`}>
-                        {entry.status === 'ok' ? 'nicht gelistet' : 'gelistet'}
-                      </span>
-                    </td>
-                    <td className="muted">{new Date(entry.updated_at).toLocaleString('de-DE')}</td>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Liste</th>
+                    <th>Status</th>
+                    <th>Zuletzt geprüft</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {status.rbl.map((entry) => (
+                    <tr key={entry.zone}>
+                      <td>
+                        <code>{entry.zone}</code>
+                      </td>
+                      <td>
+                        <span className={`badge badge-${entry.status === 'ok' ? 'ready' : 'not_ready'}`}>
+                          {entry.status === 'ok' ? 'nicht gelistet' : 'gelistet'}
+                        </span>
+                      </td>
+                      <td className="muted">{new Date(entry.updated_at).toLocaleString('de-DE')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
           <p className="muted" style={{ marginTop: '0.75rem' }}>
             Spamhaus ist von vielen Cloud-/Hosting-Adressen aus nicht direkt abfragbar (deren

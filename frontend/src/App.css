@@ -57,6 +57,15 @@
   }
 }
 
+html,
+body {
+  /* Sicherheitsnetz: die Seite selbst soll nie seitwärts scrollen —
+     einzelne breite Elemente (Tabellen) bekommen stattdessen ihren
+     eigenen gekapselten Scrollbereich (siehe .table-wrap). */
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -350,11 +359,34 @@ button:disabled {
   color: var(--bad);
 }
 
+/* Mobiler Kopfbereich (Hamburger-Knopf + Markenname) — nur < 860px
+   sichtbar (siehe Media Query unten), ersetzt dort die permanent
+   sichtbare Sidebar durch ein ausklappbares Menü. */
+.mobile-topbar {
+  display: none;
+}
+
+.mobile-nav-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  flex-shrink: 0;
+  background: transparent;
+  border-color: var(--border);
+}
+
+.mobile-nav-backdrop {
+  display: none;
+}
+
 .content {
   flex: 1;
+  min-width: 0;
   padding: 2.25rem 2.5rem 3rem;
   max-width: 68rem;
-  overflow-x: auto;
 }
 
 .content > h1 {
@@ -490,6 +522,26 @@ button:disabled {
  * Tabellen
  * ---------------------------------------------------------------------- */
 
+/* Kapselt jede .data-table in ihren eigenen horizontalen Scrollbereich —
+   auf schmalen Bildschirmen scrollt so nur die einzelne Tabelle, statt
+   die ganze Seite (samt Überschrift/Sidebar-Rand) seitwärts zu schieben
+   (vom Nutzer als "man muss von links nach rechts gehen" gemeldet). */
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Innerhalb von .table-wrap NICHT auf 100% Breite zwingen (das würde die
+   Zellen auf schmalen Bildschirmen nur zusammenquetschen statt den
+   Wrapper scrollen zu lassen) — die Tabelle darf ihre natürliche Breite
+   behalten, min-width:100% verhindert nur, dass sie auf einem breiten
+   Bildschirm schmaler als der Wrapper wird. */
+.table-wrap .data-table {
+  width: auto;
+  min-width: 100%;
+}
+
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -604,6 +656,9 @@ code {
   border-radius: 0.35rem;
   padding: 0.1rem 0.4rem;
   color: var(--text);
+  /* Lange, ununterbrochene Werte (API-Tokens, Hashes, JWTs) sollen
+     umbrechen statt ihre Karte/Zelle in die Breite zu ziehen. */
+  overflow-wrap: anywhere;
 }
 
 /* ---------------------------------------------------------------------- *
@@ -611,41 +666,93 @@ code {
  * ---------------------------------------------------------------------- */
 
 @media (max-width: 860px) {
+  /* Sidebar wird zum Slide-in-Menü statt einer dauerhaft sichtbaren
+     horizontalen Icon-Leiste — letztere musste bei 11 Nav-Punkten +
+     Suchfeld selbst seitwärts scrollen und wirkte gequetscht/"verzerrt".
+     Stattdessen: fester Kopfbereich mit Hamburger-Knopf, Menü klappt als
+     Overlay von links ein (siehe Layout.tsx für den Öffnen/Schließen-
+     Zustand). */
   .app-shell {
     flex-direction: column;
   }
 
-  .sidebar {
-    position: static;
-    height: auto;
-    width: auto;
-    flex-direction: row;
+  .mobile-topbar {
+    display: flex;
     align-items: center;
-    overflow-x: auto;
-    padding: 0.75rem;
-    gap: 0.3rem;
+    gap: 0.75rem;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    padding: 0.75rem 1rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
   }
 
-  .sidebar .brand {
-    border-bottom: none;
-    padding: 0.4rem 0.75rem 0.4rem 0.4rem;
-    margin-bottom: 0;
+  .mobile-topbar .brand {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 700;
+    color: var(--text);
   }
 
-  .sidebar a span {
-    display: none;
+  .mobile-nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(16, 24, 40, 0.45);
+    z-index: 35;
   }
 
-  .sidebar .logout {
-    margin-top: 0;
-    margin-left: auto;
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    width: min(80vw, 18rem);
+    max-width: 18rem;
+    z-index: 40;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+    overflow-y: auto;
+    box-shadow: var(--shadow-md);
   }
 
-  .sidebar .logout span {
-    display: none;
+  .sidebar-open {
+    transform: translateX(0);
   }
 
   .content {
-    padding: 1.5rem;
+    /* min-width: 0 (oben) + kein eigenes overflow-x mehr auf .content
+       selbst — einzelne Tabellen scrollen jetzt über .table-wrap, alles
+       andere soll innerhalb der Bildschirmbreite umbrechen statt die
+       ganze Seite seitwärts schiebbar zu machen. */
+    padding: 1.25rem 1rem 2rem;
+  }
+
+  .content > h1 {
+    font-size: 1.3rem;
+  }
+
+  .stat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+    gap: 0.75rem;
+  }
+
+  .inline-form {
+    align-items: stretch;
+  }
+
+  .inline-form input {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 420px) {
+  /* Sehr schmale Geräte (< 420px, z.B. ältere/kleine Smartphones im
+     Hochformat): Stat-Karten auf eine Spalte, damit nichts gequetscht
+     wird. */
+  .stat-grid {
+    grid-template-columns: 1fr;
   }
 }

@@ -78,41 +78,43 @@ export default function Overview() {
             </div>
           )}
           <div className="card">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Domain</th>
-                  <th>Status</th>
-                  <th>Postfächer</th>
-                  <th>Speicher</th>
-                  <th>Domain-Quota</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((e) => (
-                  <tr key={e.id}>
-                    <td>
-                      <Link to={`/domains/${e.id}`}>{e.name}</Link>
-                    </td>
-                    <td>
-                      <span className={`badge badge-${e.is_active ? 'ready' : 'not_ready'}`}>
-                        {e.is_active ? 'aktiv' : 'inaktiv'}
-                      </span>
-                    </td>
-                    <td>{e.user_count}</td>
-                    <td>{formatBytes(e.storage_bytes)}</td>
-                    <td className="muted">{e.quota_bytes ? formatBytes(e.quota_bytes) : 'unbegrenzt'}</td>
-                  </tr>
-                ))}
-                {entries.length === 0 && (
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
                   <tr>
-                    <td colSpan={5} className="muted">
-                      Keine Domains vorhanden.
-                    </td>
+                    <th>Domain</th>
+                    <th>Status</th>
+                    <th>Postfächer</th>
+                    <th>Speicher</th>
+                    <th>Domain-Quota</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {entries.map((e) => (
+                    <tr key={e.id}>
+                      <td>
+                        <Link to={`/domains/${e.id}`}>{e.name}</Link>
+                      </td>
+                      <td>
+                        <span className={`badge badge-${e.is_active ? 'ready' : 'not_ready'}`}>
+                          {e.is_active ? 'aktiv' : 'inaktiv'}
+                        </span>
+                      </td>
+                      <td>{e.user_count}</td>
+                      <td>{formatBytes(e.storage_bytes)}</td>
+                      <td className="muted">{e.quota_bytes ? formatBytes(e.quota_bytes) : 'unbegrenzt'}</td>
+                    </tr>
+                  ))}
+                  {entries.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="muted">
+                        Keine Domains vorhanden.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </>
       )}

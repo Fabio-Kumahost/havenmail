@@ -50,37 +50,39 @@ export default function Domains() {
       {loading ? (
         <p>Lädt…</p>
       ) : (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Status</th>
-              <th>Catch-all</th>
-            </tr>
-          </thead>
-          <tbody>
-            {domains.map((d) => (
-              <tr key={d.id}>
-                <td>
-                  <Link to={`/domains/${d.id}`}>{d.name}</Link>
-                </td>
-                <td>
-                  <span className={`badge badge-${d.is_active ? 'ready' : 'not_ready'}`}>
-                    {d.is_active ? 'aktiv' : 'inaktiv'}
-                  </span>
-                </td>
-                <td>{d.catch_all_enabled ? d.catch_all_target : '—'}</td>
-              </tr>
-            ))}
-            {domains.length === 0 && (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
               <tr>
-                <td colSpan={3} className="muted">
-                  Keine Domains vorhanden.
-                </td>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Catch-all</th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {domains.map((d) => (
+                <tr key={d.id}>
+                  <td>
+                    <Link to={`/domains/${d.id}`}>{d.name}</Link>
+                  </td>
+                  <td>
+                    <span className={`badge badge-${d.is_active ? 'ready' : 'not_ready'}`}>
+                      {d.is_active ? 'aktiv' : 'inaktiv'}
+                    </span>
+                  </td>
+                  <td>{d.catch_all_enabled ? d.catch_all_target : '—'}</td>
+                </tr>
+              ))}
+              {domains.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="muted">
+                    Keine Domains vorhanden.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )

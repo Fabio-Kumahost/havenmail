@@ -163,42 +163,45 @@ export default function DomainDetail() {
       <section className="card">
         <h2>Benutzer</h2>
         <UserForm domainId={domainId} onCreated={reload} onError={setError} />
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Adresse</th>
-              <th>Rolle</th>
-              <th>Status</th>
-              <th>Speicher</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((u) => (
-              <UserRow
-                key={u.id}
-                user={u}
-                domainName={domain?.name}
-                storageBytes={storageById[u.id]}
-                onReload={reload}
-                onError={setError}
-              />
-            ))}
-            {users.length === 0 && (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
               <tr>
-                <td colSpan={5} className="muted">
-                  Keine Benutzer.
-                </td>
+                <th>Adresse</th>
+                <th>Rolle</th>
+                <th>Status</th>
+                <th>Speicher</th>
+                <th></th>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {users.map((u) => (
+                <UserRow
+                  key={u.id}
+                  user={u}
+                  domainName={domain?.name}
+                  storageBytes={storageById[u.id]}
+                  onReload={reload}
+                  onError={setError}
+                />
+              ))}
+              {users.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="muted">
+                    Keine Benutzer.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
         <CsvImportExport domainId={domainId} domainName={domain?.name} onImported={reload} onError={setError} />
       </section>
 
       <section className="card">
         <h2>Aliase</h2>
         <AliasForm domainId={domainId} onCreated={reload} onError={setError} />
+        <div className="table-wrap">
         <table className="data-table">
           <thead>
             <tr>
@@ -238,6 +241,7 @@ export default function DomainDetail() {
             )}
           </tbody>
         </table>
+        </div>
       </section>
 
       {domain && (
@@ -451,24 +455,26 @@ function CsvImportExport({
             )}
           </p>
           {result.errors.length > 0 && (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Zeile</th>
-                  <th>local_part</th>
-                  <th>Fehler</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.errors.map((e, i) => (
-                  <tr key={i}>
-                    <td>{e.row}</td>
-                    <td>{e.local_part || '—'}</td>
-                    <td>{e.message}</td>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Zeile</th>
+                    <th>local_part</th>
+                    <th>Fehler</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {result.errors.map((e, i) => (
+                    <tr key={i}>
+                      <td>{e.row}</td>
+                      <td>{e.local_part || '—'}</td>
+                      <td>{e.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -555,32 +561,34 @@ function DnsSection({ domainId, onError }: { domainId: string; onError: (msg: st
       <p className="muted">
         Lege diese Einträge beim DNS-Provider der Domain an. Werte per Klick kopieren.
       </p>
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Typ</th>
-            <th>Name</th>
-            <th>Wert</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((e, i) => (
-            <tr key={i}>
-              <td>{e.record_type}</td>
-              <td>
-                <code>{e.name}</code>
-              </td>
-              <td className="dns-value">
-                <code>{e.value}</code>
-              </td>
-              <td>
-                <button onClick={() => navigator.clipboard.writeText(e.value)}>Kopieren</button>
-              </td>
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Typ</th>
+              <th>Name</th>
+              <th>Wert</th>
+              <th></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {entries.map((e, i) => (
+              <tr key={i}>
+                <td>{e.record_type}</td>
+                <td>
+                  <code>{e.name}</code>
+                </td>
+                <td className="dns-value">
+                  <code>{e.value}</code>
+                </td>
+                <td>
+                  <button onClick={() => navigator.clipboard.writeText(e.value)}>Kopieren</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {!rec.dkim && (
         <button onClick={onGenerateDkim} style={{ marginTop: '0.75rem' }}>
           DKIM-Schlüssel erzeugen
@@ -592,34 +600,36 @@ function DnsSection({ domainId, onError }: { domainId: string; onError: (msg: st
           {checking ? 'Prüfe…' : 'DNS jetzt prüfen'}
         </button>
         {checkResults && (
-          <table className="data-table" style={{ marginTop: '0.75rem' }}>
-            <thead>
-              <tr>
-                <th>Typ</th>
-                <th>Erwartet</th>
-                <th>Gefunden</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {checkResults.map((r, i) => (
-                <tr key={i}>
-                  <td>{r.record_type}</td>
-                  <td>
-                    <code>{r.expected}</code>
-                  </td>
-                  <td>
-                    <code>{r.actual ?? '—'}</code>
-                  </td>
-                  <td>
-                    <span className={`badge badge-${r.status === 'ok' ? 'ready' : 'not_ready'}`}>
-                      {r.status}
-                    </span>
-                  </td>
+          <div className="table-wrap" style={{ marginTop: '0.75rem' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Typ</th>
+                  <th>Erwartet</th>
+                  <th>Gefunden</th>
+                  <th>Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {checkResults.map((r, i) => (
+                  <tr key={i}>
+                    <td>{r.record_type}</td>
+                    <td>
+                      <code>{r.expected}</code>
+                    </td>
+                    <td>
+                      <code>{r.actual ?? '—'}</code>
+                    </td>
+                    <td>
+                      <span className={`badge badge-${r.status === 'ok' ? 'ready' : 'not_ready'}`}>
+                        {r.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </section>
@@ -697,41 +707,43 @@ function DkimKeysSection({
           {formatAgeDays(activeKey.created_at)} Tage alt.
         </p>
       )}
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Selektor</th>
-            <th>Alter</th>
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {keys.map((k) => (
-            <tr key={k.selector}>
-              <td>
-                <code>{k.selector}</code>
-              </td>
-              <td className="muted">{formatAgeDays(k.created_at)} Tage</td>
-              <td>
-                <span className={`badge badge-${k.active ? 'ready' : 'not_ready'}`}>
-                  {k.active ? 'aktiv' : 'ausstehend'}
-                </span>
-              </td>
-              <td>
-                {!k.active && (
-                  <button
-                    onClick={() => onActivate(k.selector)}
-                    disabled={activating === k.selector}
-                  >
-                    {activating === k.selector ? 'Aktiviere…' : 'Aktivieren'}
-                  </button>
-                )}
-              </td>
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Selektor</th>
+              <th>Alter</th>
+              <th>Status</th>
+              <th></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {keys.map((k) => (
+              <tr key={k.selector}>
+                <td>
+                  <code>{k.selector}</code>
+                </td>
+                <td className="muted">{formatAgeDays(k.created_at)} Tage</td>
+                <td>
+                  <span className={`badge badge-${k.active ? 'ready' : 'not_ready'}`}>
+                    {k.active ? 'aktiv' : 'ausstehend'}
+                  </span>
+                </td>
+                <td>
+                  {!k.active && (
+                    <button
+                      onClick={() => onActivate(k.selector)}
+                      disabled={activating === k.selector}
+                    >
+                      {activating === k.selector ? 'Aktiviere…' : 'Aktivieren'}
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <button onClick={onGenerateRotation} disabled={generating} style={{ marginTop: '0.5rem' }}>
         {generating ? 'Erzeuge…' : 'Neuen Schlüssel erzeugen (Rotation)'}
       </button>

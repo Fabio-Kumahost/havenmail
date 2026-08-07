@@ -300,7 +300,7 @@ export default function SpamSettings() {
               </p>
             )}
             {webhookSuccess && <p className="badge badge-ready">Gespeichert</p>}
-            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
               <button type="submit" disabled={webhookSubmitting}>
                 {webhookSubmitting ? 'Speichere…' : 'Speichern'}
               </button>

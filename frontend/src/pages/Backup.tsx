@@ -105,26 +105,28 @@ export default function Backup() {
           {status.history.length === 0 ? (
             <p className="muted">Noch keine Backups vorhanden.</p>
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Datei</th>
-                  <th>Größe</th>
-                  <th>Erstellt</th>
-                </tr>
-              </thead>
-              <tbody>
-                {status.history.map((entry) => (
-                  <tr key={entry.filename}>
-                    <td>
-                      <code>{entry.filename}</code>
-                    </td>
-                    <td>{formatBytes(entry.size_bytes)}</td>
-                    <td>{new Date(entry.created_at).toLocaleString('de-DE')}</td>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Datei</th>
+                    <th>Größe</th>
+                    <th>Erstellt</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {status.history.map((entry) => (
+                    <tr key={entry.filename}>
+                      <td>
+                        <code>{entry.filename}</code>
+                      </td>
+                      <td>{formatBytes(entry.size_bytes)}</td>
+                      <td>{new Date(entry.created_at).toLocaleString('de-DE')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}

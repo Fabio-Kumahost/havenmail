@@ -86,21 +86,70 @@ const ICONS = {
       <path d="M16 17l5-5-5-5M21 12H9" />
     </svg>
   ),
+  menu: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </svg>
+  ),
+  close: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  ),
 }
 
 export default function Layout() {
   const { logout } = useAuth()
   const { branding } = useBranding()
   const navigate = useNavigate()
+  // Sidebar ist ab der mobilen Breakpoint (siehe App.css, 860px) ein
+  // ausblendbares Slide-in-Menü statt einer permanent sichtbaren Spalte
+  // — auf schmalen Bildschirmen sonst zu viele Nav-Punkte + Suchfeld für
+  // eine dauerhaft sichtbare Leiste (führte zu horizontalem Scrollen der
+  // gesamten Navigation, vom Nutzer als "verzerrt" gemeldet).
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   function onLogout() {
     logout()
     navigate('/login')
   }
 
+  function closeMobileNav() {
+    setMobileNavOpen(false)
+  }
+
   return (
     <div className="app-shell">
-      <nav className="sidebar" aria-label="Hauptnavigation">
+      <div className="mobile-topbar">
+        <button
+          type="button"
+          className="mobile-nav-toggle"
+          aria-label={mobileNavOpen ? 'Menü schließen' : 'Menü öffnen'}
+          aria-expanded={mobileNavOpen}
+          onClick={() => setMobileNavOpen((open) => !open)}
+        >
+          {mobileNavOpen ? ICONS.close : ICONS.menu}
+        </button>
+        <div className="brand">
+          {branding.logo_url && (
+            <img src={branding.logo_url} alt="" style={{ height: '1.4rem', width: 'auto' }} />
+          )}
+          <span>{branding.product_name}</span>
+        </div>
+      </div>
+      {mobileNavOpen && (
+        <div className="mobile-nav-backdrop" onClick={closeMobileNav} aria-hidden="true" />
+      )}
+      <nav
+        className={`sidebar${mobileNavOpen ? ' sidebar-open' : ''}`}
+        aria-label="Hauptnavigation"
+        onClick={(e) => {
+          // Schließt das Slide-in-Menü, sobald ein Nav-Link/Button darin
+          // geklickt wird (Klicks auf leeren Zwischenraum ignorieren wir
+          // bewusst nicht extra — harmlos, wenn das Menü dabei mitschließt).
+          if ((e.target as HTMLElement).closest('a, button')) closeMobileNav()
+        }}
+      >
         <div className="brand" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           {branding.logo_url && (
             <img src={branding.logo_url} alt="" style={{ height: '1.5rem', width: 'auto' }} />

@@ -106,12 +106,12 @@ function VacationSection() {
               maxLength={8000}
             />
           </label>
-          <div style={{ display: 'flex', gap: '1rem' }}>
-            <label style={{ flex: 1 }}>
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <label style={{ flex: '1 1 10rem' }}>
               Von (optional)
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </label>
-            <label style={{ flex: 1 }}>
+            <label style={{ flex: '1 1 10rem' }}>
               Bis (optional)
               <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </label>
@@ -361,7 +361,7 @@ function TotpSection() {
               autoFocus
             />
           </label>
-          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
             <button type="submit" disabled={confirming}>
               {confirming ? 'Bestätige…' : 'Bestätigen und aktivieren'}
             </button>
@@ -396,7 +396,7 @@ function TotpSection() {
               autoComplete="current-password"
             />
           </label>
-          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
             <button type="submit" className="btn-danger" disabled={submittingDisable}>
               {submittingDisable ? 'Deaktiviere…' : 'Wirklich deaktivieren'}
             </button>
@@ -463,46 +463,48 @@ function SessionsSection() {
       {!sessions && !error && <p className="muted">Lädt…</p>}
       {sessions && sessions.length === 0 && <p className="muted">Keine aktiven Sitzungen.</p>}
       {sessions && sessions.length > 0 && (
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>IP-Adresse</th>
-              <th>Gerät/Browser</th>
-              <th>Angemeldet seit</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {sessions.map((s) => (
-              <tr key={s.id}>
-                <td>
-                  <code>{s.ip ?? '—'}</code>
-                </td>
-                <td className="muted" style={{ maxWidth: '20rem', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {s.user_agent ?? '—'}
-                </td>
-                <td>
-                  {new Date(s.created_at).toLocaleString('de-DE')}
-                  {s.is_current && (
-                    <>
-                      {' '}
-                      <span className="badge badge-ready">diese Sitzung</span>
-                    </>
-                  )}
-                </td>
-                <td>
-                  <button
-                    className="btn-danger"
-                    onClick={() => onRevoke(s.id)}
-                    disabled={revokingId === s.id}
-                  >
-                    {revokingId === s.id ? 'Melde ab…' : 'Abmelden'}
-                  </button>
-                </td>
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>IP-Adresse</th>
+                <th>Gerät/Browser</th>
+                <th>Angemeldet seit</th>
+                <th></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {sessions.map((s) => (
+                <tr key={s.id}>
+                  <td>
+                    <code>{s.ip ?? '—'}</code>
+                  </td>
+                  <td className="muted" style={{ maxWidth: '20rem', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {s.user_agent ?? '—'}
+                  </td>
+                  <td>
+                    {new Date(s.created_at).toLocaleString('de-DE')}
+                    {s.is_current && (
+                      <>
+                        {' '}
+                        <span className="badge badge-ready">diese Sitzung</span>
+                      </>
+                    )}
+                  </td>
+                  <td>
+                    <button
+                      className="btn-danger"
+                      onClick={() => onRevoke(s.id)}
+                      disabled={revokingId === s.id}
+                    >
+                      {revokingId === s.id ? 'Melde ab…' : 'Abmelden'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   )
@@ -617,34 +619,36 @@ function ApiTokensSection() {
       </form>
 
       {tokens && tokens.length > 0 && (
-        <table className="data-table" style={{ marginTop: '1rem' }}>
-          <thead>
-            <tr>
-              <th>Label(s)</th>
-              <th>Erzeugt</th>
-              <th>Läuft ab</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {tokens.map((t) => (
-              <tr key={t.id}>
-                <td>{t.scopes.length > 0 ? t.scopes.join(', ') : '—'}</td>
-                <td>{new Date(t.created_at).toLocaleString('de-DE')}</td>
-                <td>{t.expires_at ? new Date(t.expires_at).toLocaleString('de-DE') : 'nie'}</td>
-                <td>
-                  <button
-                    className="btn-danger"
-                    onClick={() => onRevoke(t.id)}
-                    disabled={revokingId === t.id}
-                  >
-                    {revokingId === t.id ? 'Widerrufe…' : 'Widerrufen'}
-                  </button>
-                </td>
+        <div className="table-wrap" style={{ marginTop: '1rem' }}>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Label(s)</th>
+                <th>Erzeugt</th>
+                <th>Läuft ab</th>
+                <th></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {tokens.map((t) => (
+                <tr key={t.id}>
+                  <td>{t.scopes.length > 0 ? t.scopes.join(', ') : '—'}</td>
+                  <td>{new Date(t.created_at).toLocaleString('de-DE')}</td>
+                  <td>{t.expires_at ? new Date(t.expires_at).toLocaleString('de-DE') : 'nie'}</td>
+                  <td>
+                    <button
+                      className="btn-danger"
+                      onClick={() => onRevoke(t.id)}
+                      disabled={revokingId === t.id}
+                    >
+                      {revokingId === t.id ? 'Widerrufe…' : 'Widerrufen'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {tokens && tokens.length === 0 && <p className="muted">Noch keine API-Keys.</p>}
     </div>

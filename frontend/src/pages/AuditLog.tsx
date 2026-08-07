@@ -127,28 +127,30 @@ export default function AuditLog() {
             <p className="muted">Keine Einträge für diese Filter.</p>
           )}
           {entries.length > 0 && (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Zeitpunkt</th>
-                  <th>Aktion</th>
-                  <th>Ziel</th>
-                  <th>Details</th>
-                  <th>IP</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((entry) => (
-                  <tr key={entry.id}>
-                    <td>{new Date(entry.created_at).toLocaleString('de-DE')}</td>
-                    <td>{entry.action}</td>
-                    <td>{entry.target}</td>
-                    <td className="muted">{summarizeDetails(entry.after ?? entry.before)}</td>
-                    <td>{entry.ip ?? '—'}</td>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Zeitpunkt</th>
+                    <th>Aktion</th>
+                    <th>Ziel</th>
+                    <th>Details</th>
+                    <th>IP</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {entries.map((entry) => (
+                    <tr key={entry.id}>
+                      <td>{new Date(entry.created_at).toLocaleString('de-DE')}</td>
+                      <td>{entry.action}</td>
+                      <td>{entry.target}</td>
+                      <td className="muted">{summarizeDetails(entry.after ?? entry.before)}</td>
+                      <td>{entry.ip ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
           {hasMore && entries.length > 0 && (
             <button onClick={loadMore} disabled={loadingMore} style={{ marginTop: '0.75rem' }}>

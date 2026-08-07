@@ -160,38 +160,40 @@ function MailQueueSection() {
               {clearingAll ? 'Leere…' : `Alle ${entries.length} leeren`}
             </button>
           </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Absender</th>
-                <th>Empfänger</th>
-                <th>Grund</th>
-                <th>Eingegangen</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <tr key={entry.queue_id}>
-                  <td>{entry.sender}</td>
-                  <td>{entry.recipients.map((r) => r.address).join(', ')}</td>
-                  <td className="muted">
-                    {entry.recipients.find((r) => r.delay_reason)?.delay_reason ?? '—'}
-                  </td>
-                  <td>{new Date(entry.arrival_time).toLocaleString('de-DE')}</td>
-                  <td>
-                    <button
-                      className="btn-danger"
-                      onClick={() => onDeleteOne(entry.queue_id)}
-                      disabled={busyId === entry.queue_id}
-                    >
-                      Löschen
-                    </button>
-                  </td>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Absender</th>
+                  <th>Empfänger</th>
+                  <th>Grund</th>
+                  <th>Eingegangen</th>
+                  <th></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {entries.map((entry) => (
+                  <tr key={entry.queue_id}>
+                    <td>{entry.sender}</td>
+                    <td>{entry.recipients.map((r) => r.address).join(', ')}</td>
+                    <td className="muted">
+                      {entry.recipients.find((r) => r.delay_reason)?.delay_reason ?? '—'}
+                    </td>
+                    <td>{new Date(entry.arrival_time).toLocaleString('de-DE')}</td>
+                    <td>
+                      <button
+                        className="btn-danger"
+                        onClick={() => onDeleteOne(entry.queue_id)}
+                        disabled={busyId === entry.queue_id}
+                      >
+                        Löschen
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </div>

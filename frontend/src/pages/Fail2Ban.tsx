@@ -82,31 +82,33 @@ export default function Fail2Ban() {
               {jail.banned.length === 0 ? (
                 <p className="muted">Keine gesperrten IPs.</p>
               ) : (
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>IP-Adresse</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {jail.banned.map((ip) => (
-                      <tr key={ip}>
-                        <td>
-                          <code>{ip}</code>
-                        </td>
-                        <td>
-                          <button
-                            onClick={() => onUnban(jail.name, ip)}
-                            disabled={busyIp === ip}
-                          >
-                            {busyIp === ip ? 'Entsperre…' : 'Entsperren'}
-                          </button>
-                        </td>
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>IP-Adresse</th>
+                        <th></th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {jail.banned.map((ip) => (
+                        <tr key={ip}>
+                          <td>
+                            <code>{ip}</code>
+                          </td>
+                          <td>
+                            <button
+                              onClick={() => onUnban(jail.name, ip)}
+                              disabled={busyIp === ip}
+                            >
+                              {busyIp === ip ? 'Entsperre…' : 'Entsperren'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           ))}
