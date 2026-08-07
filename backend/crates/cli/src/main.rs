@@ -84,6 +84,14 @@ enum Command {
         frontend_dist_dir: String,
         #[arg(long, env = "HAVENMAIL_API_BIND", default_value = "127.0.0.1:8080")]
         api_bind: String,
+        /// Roundcubes `des_key` (siehe `RenderContext::roundcube_des_key`).
+        /// Bewusst nur per Env-Var lesbar (kein Default) — anders als
+        /// db_password bis 2026-08-07 nicht mehr als `--flag`-Wert auf der
+        /// Kommandozeile sichtbar (siehe scripts/lib/install_steps.sh,
+        /// Sicherheits-/Bug-Audit vom selben Tag: CLI-Argumente sind über
+        /// `ps`/`/proc/<pid>/cmdline` für jeden lokalen Nutzer lesbar).
+        #[arg(long, env = "HAVENMAIL_ROUNDCUBE_DES_KEY")]
+        roundcube_des_key: String,
     },
     /// Legt (idempotent) die erste Domain und deren `super_admin`-Konto an.
     /// Spricht direkt die Datenbank an, nicht die API — es gibt bewusst
@@ -277,6 +285,7 @@ async fn main() {
             tls_key_path,
             frontend_dist_dir,
             api_bind,
+            roundcube_des_key,
         } => render_configs(
             &config_dir,
             &out_dir,
@@ -291,6 +300,7 @@ async fn main() {
                 tls_key_path,
                 frontend_dist_dir,
                 api_bind,
+                roundcube_des_key,
             },
         )
         .map_err(|e| e.to_string()),

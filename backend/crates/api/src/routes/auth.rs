@@ -106,7 +106,10 @@ pub async fn login(
         state.login_rate_limiter.record_failure(ip);
         return Err(ApiError::Unauthorized);
     }
-    state.login_rate_limiter.record_success(ip);
+    // Absichtlich noch KEIN record_success hier: der Login ist bei
+    // aktiviertem 2FA erst nach erfolgreicher TOTP-Prüfung abgeschlossen
+    // (siehe unten). Ein verfrühter record_success würde den IP-Zähler
+    // zurücksetzen, obwohl der Login-Vorgang noch nicht beendet ist.
 
     if let Some(encrypted_secret) = totp_secret_enc {
         let secret = secrets_crypto::decrypt(&state.secrets_key, &encrypted_secret)
@@ -117,14 +120,19 @@ pub async fn login(
             .map(|code| totp::verify_code(&secret, code).unwrap_or(false))
             .unwrap_or(false);
         if !code_ok {
-            // Absichtlich kein Rate-Limit-Fehlschlag hier: das Passwort war
-            // bereits korrekt, ein falscher/fehlender TOTP-Code ist kein
-            // Enumerations- oder Brute-Force-Signal auf das Passwort selbst.
-            // Der Login-Rate-Limiter deckt weiterhin Passwort-Rateraten ab;
-            // TOTP-Codes haben ohnehin nur 30s Gültigkeit.
+            // Zählt bewusst wie ein normaler Login-Fehlschlag gegen den
+            // IP-Rate-Limiter (bis 2026-08-07 explizit NICHT der Fall —
+            // das erlaubte unbegrenzt viele TOTP-Rateversuche für jedes
+            // Konto mit bereits bekanntem Passwort, siehe Sicherheits-/
+            // Bug-Audit). Der Limiter ist IP- statt konto-basiert, das
+            // genügt hier: er drosselt wiederholte Anfragen gegen /login,
+            // unabhängig davon, welche der beiden Prüfungen fehlschlägt.
+            state.login_rate_limiter.record_failure(ip);
             return Ok(Json(serde_json::json!({ "totp_required": true })));
         }
     }
+
+    state.login_rate_limiter.record_success(ip);
 
     let role = parse_role(&role);
     let tokens = issue_token_pair(

@@ -43,9 +43,16 @@ pub async fn create_user(
         return Err(ApiError::Forbidden);
     }
     let min_len = security_settings::min_password_length(&state.db).await?;
-    if req.local_part.trim().is_empty() || (req.password.len() as i32) < min_len {
+    let local_part = req.local_part.trim().to_lowercase();
+    // Zeichen-Whitelist statt nur "nicht leer" — local_part landet
+    // ungeprüft in Dovecots %n-Pfad-Expansion (mail_location); ohne diese
+    // Prüfung wäre Path-Traversal außerhalb des Maildir-Bereichs möglich
+    // (siehe havenmail_core::validation).
+    if !havenmail_core::validation::is_valid_mailbox_local_part(&local_part)
+        || (req.password.len() as i32) < min_len
+    {
         return Err(ApiError::BadRequest(format!(
-            "local_part erforderlich, Passwort muss mindestens {min_len} Zeichen haben"
+            "local_part ungültig, Passwort muss mindestens {min_len} Zeichen haben"
         )));
     }
 
@@ -70,7 +77,7 @@ pub async fn create_user(
         "#,
     )
     .bind(domain_id)
-    .bind(req.local_part.trim().to_lowercase())
+    .bind(&local_part)
     .bind(&password_hash)
     .bind(requested_role)
     .bind(req.quota_bytes)
@@ -470,12 +477,17 @@ pub async fn import_users(
         };
 
         let local_part = row.local_part.trim().to_lowercase();
-        if local_part.is_empty() || (row.password.len() as i32) < min_len {
+        // Zeichen-Whitelist wie in create_user (siehe dortiger Kommentar) —
+        // auch der CSV-Bulk-Import muss dieselbe Path-Traversal-Prüfung
+        // durchlaufen, nicht nur der Einzel-Erstellungs-Endpunkt.
+        if !havenmail_core::validation::is_valid_mailbox_local_part(&local_part)
+            || (row.password.len() as i32) < min_len
+        {
             errors.push(ImportRowError {
                 row: row_num,
                 local_part,
                 message: format!(
-                    "local_part erforderlich, Passwort muss mindestens {min_len} Zeichen haben"
+                    "local_part ungültig, Passwort muss mindestens {min_len} Zeichen haben"
                 ),
             });
             continue;

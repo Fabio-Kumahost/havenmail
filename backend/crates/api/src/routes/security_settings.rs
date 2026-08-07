@@ -466,6 +466,14 @@ async fn fetch_domain_ratelimit_overrides(
 /// domainbezogenen Buckets im ratelimit.conf-Template hängen von BEIDEN
 /// Quellen zugleich ab (globaler Default UND Domain-Overrides).
 pub(crate) async fn apply_to_rspamd(state: &AppState) -> ApiResult<()> {
+    // Serialisiert Lesen-Backup-Schreiben-configtest-ggf.Zurückspielen
+    // gegen gleichzeitige Aufrufe (auch von `dns::apply_dkim_maps`, die
+    // teils dieselben Rspamd-Dateien betreffen) — ohne diese Sperre könnte
+    // ein zweiter, parallel laufender Request mit fehlgeschlagenem
+    // configtest ein Backup zurückspielen, das eine bereits erfolgreich
+    // committete Änderung dieses Aufrufs wieder verwirft (TOCTOU, siehe
+    // AppState::mail_config_lock).
+    let _config_guard = state.mail_config_lock.lock().await;
     let settings = fetch_settings(&state.db).await?;
     let domain_overrides = fetch_domain_ratelimit_overrides(&state.db, &settings).await?;
     let ctx = SecurityRenderContext {

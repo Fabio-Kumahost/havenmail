@@ -3,6 +3,7 @@ use havenmail_core::auth::jwt::JwtIssuer;
 use sqlx::PgPool;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -20,4 +21,15 @@ pub struct AppState {
     /// (`HAVENMAIL_CONFIG_DIR`) — für Laufzeit-Rendering von
     /// Security-Settings-Änderungen, siehe routes/security_settings.rs.
     pub config_dir: Arc<PathBuf>,
+    /// Serialisiert alle Schreibzugriffe auf dateibasierte Rspamd-/DKIM-
+    /// Konfiguration (`security_settings::apply_to_rspamd`,
+    /// `dns::apply_dkim_maps`) — ohne diese Sperre könnten zwei gleichzeitige
+    /// Requests (Backup lesen → schreiben → configtest → ggf. Backup
+    /// zurückspielen) sich verschränken und eine bereits in der DB
+    /// gespeicherte Änderung beim Zurückspielen eines älteren Backups
+    /// wieder verwerfen (TOCTOU, gefunden im Sicherheits-/Bug-Audit vom
+    /// 2026-08-07). Analog zum Postgres-Advisory-Lock-Muster in
+    /// `havenmail_core::audit::record`, nur prozesslokal statt DB-weit, da
+    /// nur ein API-Prozess je Installation läuft.
+    pub mail_config_lock: Arc<Mutex<()>>,
 }

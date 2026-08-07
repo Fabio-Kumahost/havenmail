@@ -43,6 +43,16 @@ pub struct RenderContext {
     /// Adresse, an die die Control-Plane-API gebunden ist (`host:port`);
     /// nginx reverse-proxied `/api/`, `/healthz`, `/readyz` dorthin (M5).
     pub api_bind: String,
+    /// Roundcubes `des_key` (trotz des Namens der AES-256-Schlüssel für die
+    /// Sitzungs-Verschlüsselung des zwischengespeicherten IMAP-Passworts,
+    /// siehe `config/roundcube/config.inc.php.tera`) — bis 2026-08-07 ein
+    /// im Repo hartkodierter, auf jeder Installation identischer Wert
+    /// (öffentlich einsehbar, da das Repo public ist), jetzt pro
+    /// Installation vom Installer zufällig generiert und in
+    /// `HAVENMAIL_ETC_DIR/havenmail.env` persistiert (gefunden im
+    /// Sicherheits-/Bug-Audit vom 2026-08-07). Muss exakt 24 Zeichen lang
+    /// sein (Roundcube-Vorgabe).
+    pub roundcube_des_key: String,
 }
 
 /// Lädt alle `*.tera`-Templates aus `config_dir` (rekursiv) und rendert
@@ -147,6 +157,7 @@ mod tests {
             tls_key_path: "/etc/havenmail/tls/privkey.pem".to_string(),
             frontend_dist_dir: "/opt/havenmail/frontend/dist".to_string(),
             api_bind: "127.0.0.1:8080".to_string(),
+            roundcube_des_key: "test-key-24-characters!!".to_string(),
         }
     }
 

@@ -67,6 +67,7 @@ async fn setup() -> Option<(Router, PgPool)> {
         config_dir: Arc::new(std::path::PathBuf::from(
             env!("CARGO_MANIFEST_DIR").to_string() + "/../../../config",
         )),
+        mail_config_lock: Arc::default(),
     };
     Some((havenmail_api::build_router(state), db))
 }

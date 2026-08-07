@@ -46,6 +46,7 @@ async fn main() {
         mail_hostname: Arc::new(mail_hostname),
         login_rate_limiter: Arc::default(),
         config_dir: Arc::new(std::path::PathBuf::from(config_dir)),
+        mail_config_lock: Arc::default(),
     };
 
     let app = havenmail_api::build_router(state);

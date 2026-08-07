@@ -52,7 +52,14 @@ pub async fn create_domain(
     if actor.role != Role::SuperAdmin {
         return Err(ApiError::Forbidden);
     }
-    if req.name.trim().is_empty() || !req.name.contains('.') {
+    let name = req.name.trim().to_lowercase();
+    // Zeichen-Whitelist statt nur "nicht leer + enthält einen Punkt" —
+    // ein Domain-Name landet ungeprüft in Dateisystempfaden (DKIM-
+    // Schlüssel) und in Rspamd-Konfigurationsdateien (Lua-String-Literale
+    // in ratelimit.conf.tera); ohne diese Prüfung wäre dort Path-
+    // Traversal bzw. Config-Injection möglich (siehe
+    // havenmail_core::validation).
+    if !havenmail_core::validation::is_valid_domain_name(&name) {
         return Err(ApiError::BadRequest("ungültiger Domain-Name".to_string()));
     }
 
@@ -63,7 +70,7 @@ pub async fn create_domain(
         RETURNING {DOMAIN_COLUMNS}
         "#
     ))
-    .bind(req.name.trim().to_lowercase())
+    .bind(&name)
     .bind(req.quota_bytes)
     .fetch_one(&state.db)
     .await

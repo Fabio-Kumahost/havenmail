@@ -124,13 +124,22 @@ havenmail_configure_firewall() {
 havenmail_write_env_file() {
   local domain="$1" hostname="$2" admin_email="$3" timezone="$4"
 
-  local db_password jwt_key secrets_key
+  local db_password jwt_key secrets_key roundcube_des_key
   db_password="$(havenmail_env_get HAVENMAIL_DB_PASSWORD)"
   [[ -z "$db_password" ]] && db_password="$(havenmail_random_secret 32)"
   jwt_key="$(havenmail_env_get HAVENMAIL_JWT_SIGNING_KEY)"
   [[ -z "$jwt_key" ]] && jwt_key="$(havenmail_random_secret 48)"
   secrets_key="$(havenmail_env_get HAVENMAIL_SECRETS_KEY)"
   [[ -z "$secrets_key" ]] && secrets_key="$(havenmail_random_key_hex32 | cut -c1-32)"
+  # Roundcubes des_key (siehe config/roundcube/config.inc.php.tera) — bis
+  # 2026-08-07 ein im Repo hartkodierter, auf jeder Installation
+  # identischer Wert (Sicherheits-/Bug-Audit vom selben Tag), jetzt pro
+  # Installation zufällig generiert. MUSS exakt 24 Zeichen lang sein
+  # (Roundcube-eigene Prüfung des Standard-Chiffrierverfahrens), daher
+  # havenmail_random_alnum statt havenmail_random_secret (letzteres
+  # garantiert keine exakte Länge).
+  roundcube_des_key="$(havenmail_env_get HAVENMAIL_ROUNDCUBE_DES_KEY)"
+  [[ -z "$roundcube_des_key" ]] && roundcube_des_key="$(havenmail_random_alnum 24)"
 
   install -d -m 0750 -o root -g "$HAVENMAIL_SYSTEM_USER" "$HAVENMAIL_ETC_DIR"
   cat > "$HAVENMAIL_ENV_FILE" <<EOF
@@ -146,6 +155,7 @@ HAVENMAIL_DB_PASSWORD=${db_password}
 HAVENMAIL_API_BIND=127.0.0.1:8080
 HAVENMAIL_JWT_SIGNING_KEY=${jwt_key}
 HAVENMAIL_SECRETS_KEY=${secrets_key}
+HAVENMAIL_ROUNDCUBE_DES_KEY=${roundcube_des_key}
 EOF
   chmod 0640 "$HAVENMAIL_ENV_FILE"
   chown root:"$HAVENMAIL_SYSTEM_USER" "$HAVENMAIL_ENV_FILE"
@@ -192,22 +202,32 @@ SQL
 # Rendern selbst noch nicht existieren, nur beim späteren nginx-Start mit
 # dem vollen HTTPS-Vhost, siehe havenmail_deploy_nginx_full).
 havenmail_render_configs() {
-  local db_password mail_hostname
-  db_password="$(havenmail_env_get HAVENMAIL_DB_PASSWORD)"
+  local mail_hostname
   mail_hostname="$(havenmail_env_get HAVENMAIL_HOSTNAME)"
   HAVENMAIL_RENDER_DIR="${HAVENMAIL_STATE_DIR}/rendered-config"
 
-  havenmail_log "Rendere Konfigurationstemplates (Postfix/Dovecot/Rspamd/Fail2ban/nginx)…"
+  havenmail_log "Rendere Konfigurationstemplates (Postfix/Dovecot/Rspamd/Fail2ban/nginx/Roundcube)…"
   rm -rf "$HAVENMAIL_RENDER_DIR"
+  # db_password und roundcube_des_key bewusst NICHT als --flag-Argumente
+  # (auf der Kommandozeile für jeden lokalen Nutzer über ps/proc/<pid>/
+  # cmdline sichtbar, gefunden im Sicherheits-/Bug-Audit vom 2026-08-07),
+  # sondern nur über die von clap unterstützten Env-Var-Namen — dieselben
+  # Namen wie in HAVENMAIL_ENV_FILE, hier per `export` nur für diesen
+  # einen Subprozess sichtbar.
+  local render_db_password render_roundcube_des_key
+  render_db_password="$(havenmail_env_get HAVENMAIL_DB_PASSWORD)"
+  render_roundcube_des_key="$(havenmail_env_get HAVENMAIL_ROUNDCUBE_DES_KEY)"
+  export HAVENMAIL_DB_PASSWORD="$render_db_password"
+  export HAVENMAIL_ROUNDCUBE_DES_KEY="$render_roundcube_des_key"
   "${HAVENMAIL_REPO_DIR}/backend/target/release/havenmail-cli" render-configs \
     --config-dir "${HAVENMAIL_REPO_DIR}/config" \
     --out-dir "$HAVENMAIL_RENDER_DIR" \
     --mail-hostname "$mail_hostname" \
-    --db-password "$db_password" \
     --tls-cert-path "/etc/letsencrypt/live/${mail_hostname}/fullchain.pem" \
     --tls-key-path "/etc/letsencrypt/live/${mail_hostname}/privkey.pem" \
     --frontend-dist-dir "${HAVENMAIL_REPO_DIR}/frontend/dist" \
     --api-bind "$(havenmail_env_get HAVENMAIL_API_BIND)"
+  unset HAVENMAIL_DB_PASSWORD HAVENMAIL_ROUNDCUBE_DES_KEY
 
   # Dovecot 2.4 replaced the legacy mail_location setting with the
   # mail_driver/mail_path pair. Debian 12 still ships Dovecot 2.3, so keep
@@ -634,6 +654,15 @@ havenmail_deploy_roundcube_skin() {
   local rc_share=/usr/share/roundcube
   local rc_lib=/var/lib/roundcube
 
+  # config.inc.php.tera braucht ein bereits gerendertes
+  # HAVENMAIL_RENDER_DIR (siehe config.inc.php-Deploy weiter unten) — bei
+  # eigenständigem Aufruf dieser Funktion (siehe Kommentar oben, manuell
+  # ohne den vollen install.sh-Ablauf) ist das noch nicht garantiert
+  # gesetzt/vorhanden, deshalb hier bei Bedarf nachholen.
+  if [[ -z "${HAVENMAIL_RENDER_DIR:-}" || ! -f "${HAVENMAIL_RENDER_DIR}/roundcube/config.inc.php" ]]; then
+    havenmail_render_configs
+  fi
+
   if [[ ! -d "$rc_share" ]]; then
     havenmail_log "Roundcube nicht gefunden (${rc_share} fehlt) — Skin-Deployment übersprungen."
     return 0
@@ -790,14 +819,15 @@ havenmail_deploy_roundcube_skin() {
 
   rm -rf "$build_dir"
 
-  # config.inc.php: reine Referenzkopie, keine .tera-Vorlage — die Datei
-  # enthält keine install-zeit-spezifischen Secrets (DB-Zugangsdaten kommen
-  # über das separate, von dbconfig-common verwaltete
-  # debian-db-roundcube.php), ist also unverändert auf jedem Server mit
-  # identischer Roundcube-Version einsetzbar.
+  # config.inc.php: seit 2026-08-07 eine echte .tera-Vorlage (nicht mehr
+  # reine Referenzkopie) — enthält jetzt den pro Installation zufällig
+  # generierten roundcube_des_key sowie mail_hostname für die TLS-
+  # peer_name-Prüfung (siehe config.inc.php.tera, Sicherheits-/Bug-Audit
+  # vom selben Tag). DB-Zugangsdaten kommen weiterhin über das separate,
+  # von dbconfig-common verwaltete debian-db-roundcube.php, nicht hierüber.
   if [[ -f /etc/roundcube/config.inc.php ]]; then
     install -m 0640 -o root -g www-data \
-      "${HAVENMAIL_REPO_DIR}/config/roundcube/config.inc.php" /etc/roundcube/config.inc.php
+      "${HAVENMAIL_RENDER_DIR}/roundcube/config.inc.php" /etc/roundcube/config.inc.php
   fi
 
   systemctl reload nginx 2>/dev/null || true

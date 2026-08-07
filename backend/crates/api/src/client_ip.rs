@@ -9,6 +9,20 @@
 //! Client). Fehlt der Header (z. B. Fehlkonfiguration), wird eine
 //! unspezifizierte Adresse verwendet — das Rate-Limiting bündelt dann zwar
 //! alle Clients, verhindert aber nicht wenigstens den einfachsten Fall.
+//!
+//! SICHERHEITSANNAHME: `extract()` nimmt den ERSTEN Eintrag als Client-IP
+//! — das ist nur sicher, weil `config/nginx/havenmail.conf.tera` den
+//! `X-Forwarded-For`-Header beim Weiterleiten an die API bewusst mit
+//! `$remote_addr` ÜBERSCHREIBT statt (wie zuvor, per
+//! `$proxy_add_x_forwarded_for`) nur einen vom Client mitgeschickten Wert
+//! ANZUHÄNGEN. Mit der alten Append-Logik konnte ein Client einen
+//! beliebigen `X-Forwarded-For`-Wert selbst mitschicken und damit sowohl
+//! den Login-Rate-Limiter (`rate_limit.rs`) als auch die in `audit_log`
+//! gespeicherte IP frei fälschen (gefunden im Sicherheits-/Bug-Audit vom
+//! 2026-08-07) — nginx ist laut Architektur der einzige Hop vor der API,
+//! ein zusätzlicher, echter Reverse-Proxy davor (CDN o. Ä.) ist in dieser
+//! Topologie nicht vorgesehen. Wird diese Topologie je erweitert (z. B.
+//! ein CDN vor nginx), muss diese Annahme neu geprüft werden.
 
 use axum::http::HeaderMap;
 use std::net::IpAddr;

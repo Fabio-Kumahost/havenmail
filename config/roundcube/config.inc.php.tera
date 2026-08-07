@@ -25,8 +25,8 @@ include("/etc/roundcube/debian-db-roundcube.php");
 // IMAP host chosen to perform the log-in.
 // Havenmail-Dovecot erzwingt ssl=required (siehe 10-ssl.conf) — daher
 // tls:// (STARTTLS auf Port 143), nicht Klartext. Verbindung läuft über
-// localhost, das Zertifikat ist aber auf mail.xfabio.de ausgestellt,
-// daher verify_peer_name unten deaktiviert (siehe imap_conn_options).
+// localhost, das Zertifikat ist aber auf {{ mail_hostname }} ausgestellt,
+// daher 'peer_name' unten explizit gesetzt (siehe imap_conn_options).
 $config['imap_host'] = ["tls://localhost:143"];
 
 // SMTP server host (for sending mails). Ebenfalls STARTTLS, siehe oben.
@@ -40,20 +40,31 @@ $config['smtp_user'] = '%u';
 // will use the current user's password for login
 $config['smtp_pass'] = '%p';
 
-// Zertifikat ist für mail.xfabio.de ausgestellt, wir verbinden aber über
-// localhost — Hostname-Verifikation würde daher fälschlich fehlschlagen.
-// Die Verbindung selbst bleibt verschlüsselt (STARTTLS), nur der
-// Hostname-Abgleich wird übersprungen (Server verlässt die Maschine nicht).
+// Zertifikat ist für {{ mail_hostname }} ausgestellt, wir verbinden aber
+// über localhost — ein reiner Hostname-Abgleich würde daher fälschlich
+// fehlschlagen. Bis 2026-08-07 wurde dafür verify_peer KOMPLETT
+// deaktiviert, nicht nur die Hostname-Prüfung — damit hätte Roundcube
+// JEDES Zertifikat (selbstsigniert, abgelaufen, fremde CA) akzeptiert,
+// ein lokaler Prozess zwischen Roundcube und Dovecot/Postfix hätte die
+// STARTTLS-Verbindung unbemerkt abhören können (gefunden im Sicherheits-/
+// Bug-Audit vom 2026-08-07). Fix: PHPs Stream-Kontext-Option 'peer_name'
+// setzt den für die Zertifikatsprüfung erwarteten Hostnamen explizit auf
+// {{ mail_hostname }} (statt 'localhost' aus der Verbindungsadresse
+// abzuleiten) — verify_peer bleibt aktiv, die volle Vertrauenskette wird
+// weiterhin geprüft, nur der Hostname-Abgleich zielt auf den tatsächlich
+// ausgestellten Namen.
 $config['imap_conn_options'] = [
     'ssl' => [
-        'verify_peer' => false,
-        'verify_peer_name' => false,
+        'verify_peer' => true,
+        'verify_peer_name' => true,
+        'peer_name' => '{{ mail_hostname }}',
     ],
 ];
 $config['smtp_conn_options'] = [
     'ssl' => [
-        'verify_peer' => false,
-        'verify_peer_name' => false,
+        'verify_peer' => true,
+        'verify_peer_name' => true,
+        'peer_name' => '{{ mail_hostname }}',
     ],
 ];
 
@@ -67,8 +78,15 @@ $config['product_name'] = 'Havenmail Webmail';
 // This key is used to encrypt the users imap password which is stored
 // in the session record. For the default cipher method it must be
 // exactly 24 characters long.
-// YOUR KEY MUST BE DIFFERENT THAN THE SAMPLE VALUE FOR SECURITY REASONS
-$config['des_key'] = '7TqwvtJwjMx18cTwRayb1sV6';
+//
+// Bis 2026-08-07 stand hier ein im (öffentlichen) Repo hartkodierter,
+// auf jeder Installation identischer Wert — jeder mit Repo-Zugriff konnte
+// damit ein zwischengespeichertes IMAP-Passwort aus einem geleakten
+// Session-Store jeder Havenmail-Installation entschlüsseln (gefunden im
+// Sicherheits-/Bug-Audit vom 2026-08-07). Jetzt pro Installation vom
+// Installer zufällig generiert (siehe RenderContext::roundcube_des_key /
+// scripts/lib/install_steps.sh::havenmail_write_env_file).
+$config['des_key'] = '{{ roundcube_des_key }}';
 
 // List of active plugins (in plugins/ directory)
 // Debian: install roundcube-plugins first to have any

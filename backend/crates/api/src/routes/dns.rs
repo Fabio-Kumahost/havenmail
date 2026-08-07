@@ -248,6 +248,10 @@ pub async fn activate_dkim_key(
 /// nur die eine gerade geänderte Domain), da beide Dateien
 /// domänenübergreifend sind.
 async fn apply_dkim_maps(state: &AppState) -> ApiResult<()> {
+    // Dieselbe Sperre wie `security_settings::apply_to_rspamd` — beide
+    // Funktionen lesen/schreiben teils dieselben Rspamd-Dateien und dürfen
+    // sich nicht verschränken (TOCTOU, siehe AppState::mail_config_lock).
+    let _config_guard = state.mail_config_lock.lock().await;
     let dir = dkim_dir();
     let active_keys: Vec<(String, String)> = sqlx::query_as(
         "SELECT d.name, k.selector FROM dkim_keys k JOIN domains d ON d.id = k.domain_id WHERE k.active = true",

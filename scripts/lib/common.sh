@@ -47,6 +47,18 @@ havenmail_random_key_hex32() {
   openssl rand -hex 32
 }
 
+# Erzeugt eine ZUFÄLLIGE Zeichenkette exakter Länge $1 aus reinen
+# Alphanumerischen Zeichen (kein "=+/", die havenmail_random_secret nur
+# herausfiltert, ohne die dadurch verkürzte Länge auszugleichen — für
+# Werte mit harter Längenanforderung wie Roundcubes des_key, das exakt 24
+# Zeichen lang sein muss, sonst schlägt Roundcubes eigene Prüfung fehl).
+# Zieht großzügig mehr Rohbytes, als für $1 Zeichen nötig wären, damit nach
+# dem Herausfiltern von "=+/" garantiert genug übrig bleibt.
+havenmail_random_alnum() {
+  local length="$1"
+  openssl rand -base64 "$((length * 3))" | tr -d '=+/\n' | head -c "$length"
+}
+
 havenmail_ensure_dirs() {
   install -d -m 0750 -o root -g root "$HAVENMAIL_ETC_DIR"
   install -d -m 0750 -o "$HAVENMAIL_SYSTEM_USER" -g "$HAVENMAIL_SYSTEM_USER" "$HAVENMAIL_STATE_DIR"

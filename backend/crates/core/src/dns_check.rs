@@ -32,8 +32,22 @@ pub struct DnsCheckResult {
     pub status: CheckStatus,
 }
 
+/// Nutzt den lokalen/Provider-Resolver aus /etc/resolv.conf statt
+/// hickory-resolvers fest einprogrammiertem Google-Public-DNS-Fallback
+/// (`ResolverConfig::default()`) — dieselbe Ursache, die in `rbl_check.rs`
+/// bereits als echter Live-Vorfall behoben wurde (Spamhaus blockt
+/// DNSBL-Abfragen über bekannte öffentliche Resolver praktisch
+/// vollständig). Betrifft hier zwar keine RBL-Abfrage, aber derselbe
+/// Google-Resolver kann für andere Domains rate-limitiert sein oder
+/// abweichende (z. B. gecachte/veraltete) Antworten liefern als der
+/// lokale Resolver, den `dig` vom selben Host aus nutzt — das führte zu
+/// falschen "Fehlend"/"Abweichend"-Ergebnissen im Admin-Panel für
+/// tatsächlich korrekt konfigurierte Domains (gefunden im
+/// Sicherheits-/Bug-Audit vom 2026-08-07).
 fn resolver() -> TokioAsyncResolver {
-    TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default())
+    TokioAsyncResolver::tokio_from_system_conf().unwrap_or_else(|_| {
+        TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default())
+    })
 }
 
 /// Prüft, ob unter `mx_hostname` ein passender MX-Eintrag für `domain` existiert.

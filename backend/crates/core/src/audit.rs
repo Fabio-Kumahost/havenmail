@@ -123,8 +123,8 @@ pub async fn record(
 
     sqlx::query(
         r#"
-        INSERT INTO audit_log (actor_id, action, target, domain_id, before, after, ip, prev_hash, hash)
-        VALUES ($1, $2, $3, $4, $5, $6, $7::inet, $8, $9)
+        INSERT INTO audit_log (actor_id, actor_id_snapshot, action, target, domain_id, before, after, ip, prev_hash, hash)
+        VALUES ($1, $1, $2, $3, $4, $5, $6, $7::inet, $8, $9)
         "#,
     )
     .bind(input.actor_id)
@@ -140,6 +140,50 @@ pub async fn record(
     .await?;
 
     tx.commit().await
+}
+
+/// Lädt die vollständige Audit-Log-Kette in Einfüge-Reihenfolge (`seq`) für
+/// `verify_chain`. Nutzt bewusst `actor_id_snapshot` statt der live-FK
+/// `actor_id` — letztere kann durch `ON DELETE SET NULL` nach dem
+/// Einfügen mutieren (siehe Migration 0016), `actor_id_snapshot` nicht.
+pub async fn load_chain_entries(pool: &sqlx::PgPool) -> Result<Vec<StoredAuditEntry>, sqlx::Error> {
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        actor_id_snapshot: Option<Uuid>,
+        action: String,
+        target: String,
+        before: Option<Value>,
+        after: Option<Value>,
+        created_at: chrono::DateTime<chrono::Utc>,
+        prev_hash: Option<String>,
+        hash: String,
+    }
+
+    let rows = sqlx::query_as::<_, Row>(
+        r#"
+        SELECT actor_id_snapshot, action, target, before, after, created_at, prev_hash, hash
+        FROM audit_log
+        ORDER BY seq ASC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| StoredAuditEntry {
+            input: AuditEntryInput {
+                actor_id: r.actor_id_snapshot,
+                action: r.action,
+                target: r.target,
+                before: r.before,
+                after: r.after,
+                created_at_unix: r.created_at.timestamp(),
+            },
+            prev_hash: r.prev_hash,
+            hash: r.hash,
+        })
+        .collect())
 }
 
 #[cfg(test)]

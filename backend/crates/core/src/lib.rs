@@ -27,5 +27,6 @@ pub mod service_status;
 pub mod sieve_render;
 pub mod tls_status;
 pub mod trigger_file;
+pub mod validation;
 
 pub use rbac::{Action, Actor, Role};
